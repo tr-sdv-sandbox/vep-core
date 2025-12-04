@@ -1,0 +1,145 @@
+# COVESA IFEX VDR Integration - Architecture
+
+## System Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                            RT / HARDWARE SIDE                                            │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                          │
+│  ┌─────────┐      ┌──────────────────┐                 ┌─────────────────┐                               │
+│  │   CAN   │─────→│ vdr_vssdag_probe │                 │  rt_dds_bridge  │                               │
+│  │  vcan0  │      └────────┬─────────┘                 └────────┬────────┘                               │
+│  └─────────┘               │                                    ▲                                        │
+│                            │                                    │                                        │
+│                            │                                    │           ┌──────────────┐             │
+│                            │             ┌──────────────┐       │           │ vdr_otel     │             │
+│                            │             │ diagnostics  │       │           │ _bridge      │             │
+│                            │             │   probe      │       │           └──────┬───────┘             │
+│                            │             └──────┬───────┘       │                  │                     │
+│                            │                    │               │                  │                     │
+├────────────────────────────┼────────────────────┼───────────────┼──────────────────┼─────────────────────┤
+│                            ▼                    ▼               ▼                  ▼                     │
+│  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐   │
+│  │                                           DDS BUS                                                │   │
+│  └──────────────────────────────────────────────────────────────────────────────────────────────────┘   │
+│                  │                                                       │                              │
+│                  ▼                                                       ▼                              │
+│         ┌──────────────┐                                        ┌──────────────────┐                    │
+│         │ vdr_exporter │                                        │ kuksa_dds_bridge │                    │
+│         └──────┬───────┘                                        └────────┬─────────┘                    │
+│                ▼                                                         ▼                              │
+│         ┌──────────────┐                                        ┌──────────────────┐                    │
+│         │ Mosquitto /  │                                        │      KUKSA       │                    │
+│         │     AWS      │                                        │   Databroker     │                    │
+│         └──────────────┘                                        └────────┬─────────┘                    │
+│                                                                          │                              │
+│                                                                 ┌────────┼────────┐                     │
+│                                                                 ▼        ▼        ▼                     │
+│                                                              ┌─────┐ ┌─────┐ ┌─────┐                    │
+│                                                              │App1 │ │App2 │ │App3 │                    │
+│                                                              └─────┘ └─────┘ └─────┘                    │
+│                                                                                                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Components
+
+### Probes (Data Sources)
+
+**vdr_vssdag_probe**
+- Reads CAN frames from vcan0 (or physical CAN interface)
+- Decodes using DBC files (e.g., Model3CAN.dbc)
+- Maps CAN signals to VSS paths using DAG-based transformations
+- Publishes to DDS topic `rt/vss/signals`
+
+**vdr_otel_bridge**
+- Receives OpenTelemetry data (traces, metrics, logs)
+- Converts to VDR telemetry format
+- Publishes to DDS
+
+**diagnostics probes** 
+- UDS diagnostic data
+- DTC codes, freeze frames
+
+### DDS Bus
+
+Central message bus using CycloneDDS. All probes publish here, all consumers subscribe here.
+
+**Topics:**
+| Topic | Direction | Content |
+|-------|-----------|---------|
+| `rt/vss/signals` | Probes → Consumers | Sensor values |
+| `rt/vss/actuators/target` | KUKSA Bridge → RT Bridge | Actuator commands |
+| `rt/vss/actuators/actual` | RT Bridge → KUKSA Bridge | Actuator feedback |
+
+### Bridges
+
+**rt_dds_bridge**
+- Bridges DDS to real-time transport layer (UDP, AVTP, SHM)
+- Bidirectional: receives actuator targets, sends actuator actuals
+- Loopback mode for testing (echoes targets as actuals)
+
+**kuksa_dds_bridge**
+- Bridges DDS to KUKSA databroker
+- Sensors: DDS → KUKSA (vehicle apps can subscribe)
+- Actuators: KUKSA set() → DDS target, DDS actual → KUKSA feedback
+
+### Cloud Offboard
+
+**vdr_exporter**
+- Subscribes to DDS topics
+- Compresses and batches telemetry
+- Publishes to MQTT for cloud offboarding
+
+**Mosquitto / AWS**
+- MQTT broker (Mosquitto for local testing, AWS IoT for production)
+- Receives all offboarded vehicle data
+
+### Vehicle Apps
+
+**KUKSA Databroker**
+- Central VSS signal store with gRPC API
+- Apps subscribe to signals, set actuator targets
+- Schema queried dynamically (no local VSS JSON needed)
+
+**App1, App2, App3...**
+- Vehicle applications using libkuksa-cpp
+- Subscribe to VSS signals
+- Control actuators via KUKSA
+
+## Data Flow Examples
+
+### Sensor Flow (e.g., Vehicle.Speed)
+```
+CAN → vdr_vssdag_probe → DDS → kuksa_dds_bridge → KUKSA → Apps
+                          └──→ vdr_exporter → MQTT → Cloud
+```
+
+### Actuator Flow (e.g., HVAC Temperature)
+```
+App → KUKSA set() → kuksa_dds_bridge → DDS target → rt_dds_bridge → RT
+                                                           │
+                    KUKSA ← kuksa_dds_bridge ← DDS actual ←┘
+```
+
+## Ports
+
+| Service | Port | Protocol |
+|---------|------|----------|
+| KUKSA Databroker | 61234 | gRPC |
+| Mosquitto MQTT | 1883 | MQTT |
+| DDS | multicast | RTPS |
+
+## Running the Framework
+
+```bash
+# Start all components
+./run_framework.sh
+
+# Replay CAN data
+canplayer -I config/candump.log vcan0=can0
+
+# Monitor KUKSA signals
+./kuksa_subscribe.sh "Vehicle"
+```

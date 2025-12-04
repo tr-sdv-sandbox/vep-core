@@ -1,0 +1,213 @@
+// Copyright 2025 COVESA IFEX VDR Integration Contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Lean transfer protocol for vehicle-to-cloud telemetry.
+// Optimized for bandwidth - minimal payload, batching, path interning.
+// Cloud gateway decorates with offboard metadata at ingestion.
+
+syntax = "proto3";
+
+package vdr.transfer;
+
+option optimize_for = LITE_RUNTIME;
+
+// Batch of VSS signals - primary transfer unit
+// Typically zstd compressed before MQTT publish
+message SignalBatch {
+  // Relative timestamp base (ms since epoch, truncated)
+  // Individual signals use delta from this
+  fixed64 base_timestamp_ms = 1;
+
+  // Source identifier (short, e.g. "vssdag", "obd")
+  string source_id = 2;
+
+  // Batch sequence number (monotonic per source)
+  uint32 sequence = 3;
+
+  // Signals in this batch
+  repeated Signal signals = 4;
+}
+
+message Signal {
+  // Path can be full string or interned ID
+  oneof path_ref {
+    string path = 1;          // Full path "Vehicle.Speed"
+    uint32 path_id = 2;       // Interned ID (requires path dictionary)
+  }
+
+  // Delta from batch base_timestamp_ms (saves bytes)
+  uint32 timestamp_delta_ms = 3;
+
+  // Quality (0=VALID is default, saves a byte for common case)
+  Quality quality = 4;
+
+  // Value - oneof for type efficiency
+  // Aligned with VSS type system
+  oneof value {
+    bool bool_val = 10;
+    int32 int32_val = 11;     // int8, int16, int32
+    int64 int64_val = 12;
+    uint32 uint32_val = 13;   // uint8, uint16, uint32
+    uint64 uint64_val = 14;
+    float float_val = 15;
+    double double_val = 16;
+    string string_val = 17;
+    bytes bytes_val = 18;     // For opaque binary data
+
+    // Array types (VSS 4.0)
+    BoolArray bool_array = 20;
+    Int32Array int32_array = 21;
+    Int64Array int64_array = 22;
+    Uint32Array uint32_array = 23;
+    Uint64Array uint64_array = 24;
+    FloatArray float_array = 25;
+    DoubleArray double_array = 26;
+    StringArray string_array = 27;
+
+    // Struct type (VSS 4.0)
+    StructValue struct_val = 30;
+    StructArray struct_array = 31;
+  }
+}
+
+// Array types for efficient encoding
+message BoolArray {
+  repeated bool values = 1 [packed = true];
+}
+
+message Int32Array {
+  repeated int32 values = 1 [packed = true];
+}
+
+message Int64Array {
+  repeated int64 values = 1 [packed = true];
+}
+
+message Uint32Array {
+  repeated uint32 values = 1 [packed = true];
+}
+
+message Uint64Array {
+  repeated uint64 values = 1 [packed = true];
+}
+
+message FloatArray {
+  repeated float values = 1 [packed = true];
+}
+
+message DoubleArray {
+  repeated double values = 1 [packed = true];
+}
+
+message StringArray {
+  repeated string values = 1;
+}
+
+// Struct value - named fields with typed values (VSS 4.0 struct support)
+// Supports nested structs for complex hierarchical data
+message StructValue {
+  string type_name = 1;                 // Struct type identifier
+  repeated StructField fields = 2;      // Named fields
+}
+
+message StructField {
+  string name = 1;
+
+  oneof value {
+    bool bool_val = 10;
+    int32 int32_val = 11;
+    int64 int64_val = 12;
+    uint32 uint32_val = 13;
+    uint64 uint64_val = 14;
+    float float_val = 15;
+    double double_val = 16;
+    string string_val = 17;
+
+    // Arrays in struct fields
+    BoolArray bool_array = 20;
+    Int32Array int32_array = 21;
+    Int64Array int64_array = 22;
+    FloatArray float_array = 25;
+    DoubleArray double_array = 26;
+    StringArray string_array = 27;
+
+    // Nested structs
+    StructValue struct_val = 30;
+    StructArray struct_array = 31;
+  }
+}
+
+message StructArray {
+  repeated StructValue values = 1;
+}
+
+enum Quality {
+  QUALITY_NOT_AVAILABLE = 0;
+  QUALITY_VALID = 1;          // Most common for published signals
+  QUALITY_INVALID = 2;
+}
+
+// Event batch
+message EventBatch {
+  fixed64 base_timestamp_ms = 1;
+  string source_id = 2;
+  uint32 sequence = 3;
+  repeated Event events = 4;
+}
+
+message Event {
+  string event_id = 1;
+  uint32 timestamp_delta_ms = 2;
+  string category = 3;        // "ADAS", "POWERTRAIN", etc
+  string event_type = 4;      // "harsh_brake", "dtc", etc
+  Severity severity = 5;
+  bytes payload = 6;          // Optional event-specific data
+}
+
+enum Severity {
+  SEVERITY_INFO = 0;
+  SEVERITY_WARNING = 1;
+  SEVERITY_ERROR = 2;
+  SEVERITY_CRITICAL = 3;
+}
+
+// Metrics batch (Prometheus-style gauges/counters)
+message MetricsBatch {
+  fixed64 base_timestamp_ms = 1;
+  string source_id = 2;
+  uint32 sequence = 3;
+  repeated Metric metrics = 4;
+}
+
+message Metric {
+  string name = 1;
+  uint32 timestamp_delta_ms = 2;
+
+  oneof metric_type {
+    double gauge = 10;
+    double counter = 11;
+    Histogram histogram = 12;
+  }
+
+  // Labels as parallel arrays (more compact than map)
+  repeated string label_keys = 20;
+  repeated string label_values = 21;
+}
+
+message Histogram {
+  uint64 sample_count = 1;
+  double sample_sum = 2;
+  repeated double bucket_bounds = 3;
+  repeated uint64 bucket_counts = 4;
+}
+
+// Path dictionary for interning (sent once, cached by receiver)
+message PathDictionary {
+  uint32 version = 1;
+  repeated PathEntry entries = 2;
+}
+
+message PathEntry {
+  uint32 id = 1;
+  string path = 2;
+}
