@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(covesa_ifex_vdr_integration VERSION 0.1.0 LANGUAGES C CXX)
+project(vep_core VERSION 0.1.0 LANGUAGES C CXX)
 
 # C++17 standard
 set(CMAKE_CXX_STANDARD 17)
@@ -111,68 +111,38 @@ add_custom_target(generate_idl DEPENDS
 add_dependencies(telemetry_idl generate_idl)
 
 # ============================================================================
-# Include vdr-light (provides vdr_common - IDL-agnostic DDS utilities)
+# Include vep-dds (provides vdr_common - IDL-agnostic DDS utilities)
 # ============================================================================
 
-set(VDR_LIGHT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vdr-light")
-if(NOT EXISTS "${VDR_LIGHT_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "vdr-light not found at ${VDR_LIGHT_DIR}")
+if(NOT TARGET vdr_common)
+    message(FATAL_ERROR "vdr_common target not found. Build from vehicle-edge-platform top-level or ensure vep-dds is built first.")
 endif()
-
-# Don't build vdr-light examples - we have our own IDL
-set(VDR_LIGHT_BUILD_EXAMPLES OFF CACHE BOOL "Skip vdr-light examples" FORCE)
-
-add_subdirectory(${VDR_LIGHT_DIR} ${CMAKE_BINARY_DIR}/vdr-light)
 
 # ============================================================================
 # libvssdag (REQUIRED for CAN-to-VSS transformation)
 # ============================================================================
 
-find_package(vssdag QUIET)
-if(NOT vssdag_FOUND)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../libvssdag/CMakeLists.txt")
-        message(STATUS "Found libvssdag in parent directory")
-        set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-        set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        add_subdirectory(../libvssdag ${CMAKE_BINARY_DIR}/libvssdag)
-        set(vssdag_FOUND TRUE)
-    else()
-        message(FATAL_ERROR "libvssdag not found. Please install it or place it in ../libvssdag")
-    endif()
+if(NOT TARGET vssdag)
+    message(FATAL_ERROR "vssdag target not found. Build from vehicle-edge-platform top-level or ensure libvssdag is built first.")
 endif()
 
 # ============================================================================
-# libvss-types (shared types - may already be included by dependencies)
+# libvss-types (shared types)
 # ============================================================================
 
 if(NOT TARGET vss::types)
-    find_package(vss-types QUIET)
-    if(NOT vss-types_FOUND)
-        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../libvss-types/CMakeLists.txt")
-            message(STATUS "Found libvss-types in parent directory")
-            add_subdirectory(../libvss-types ${CMAKE_BINARY_DIR}/libvss-types)
-        else()
-            message(FATAL_ERROR "libvss-types not found")
-        endif()
-    endif()
+    message(FATAL_ERROR "vss::types target not found. Build from vehicle-edge-platform top-level or ensure libvss-types is built first.")
 endif()
 
 # ============================================================================
-# libkuksa-cpp (Kuksa databroker client)
+# libkuksa-cpp (Kuksa databroker client - optional)
 # ============================================================================
 
-find_package(kuksa QUIET)
-if(NOT kuksa_FOUND)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../libkuksa-cpp/CMakeLists.txt")
-        message(STATUS "Found libkuksa-cpp in parent directory")
-        set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-        set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        add_subdirectory(../libkuksa-cpp ${CMAKE_BINARY_DIR}/libkuksa-cpp)
-        set(kuksa_FOUND TRUE)
-    else()
-        message(WARNING "libkuksa-cpp not found - kuksa_dds_bridge will not be built")
-        set(kuksa_FOUND FALSE)
-    endif()
+if(TARGET kuksa)
+    set(kuksa_FOUND TRUE)
+else()
+    message(WARNING "kuksa target not found - kuksa_dds_bridge will not be built")
+    set(kuksa_FOUND FALSE)
 endif()
 
 # ============================================================================
@@ -220,7 +190,7 @@ target_include_directories(vdr_exporter_lib PUBLIC
 )
 
 target_link_libraries(vdr_exporter_lib PUBLIC
-    vdr_common         # From vdr-light: DDS wrappers
+    vdr_common         # From vep-dds: DDS wrappers
     telemetry_idl      # Our IDL types
     transfer_proto     # Our protobuf transfer types
     glog::glog
@@ -238,13 +208,13 @@ add_test(NAME check_cyclonedds COMMAND ${CMAKE_COMMAND} -E echo "CycloneDDS: OK"
 add_test(NAME check_mosquitto COMMAND ${CMAKE_COMMAND} -E echo "libmosquitto: OK")
 add_test(NAME check_zstd COMMAND ${CMAKE_COMMAND} -E echo "libzstd: OK")
 add_test(NAME check_vssdag COMMAND ${CMAKE_COMMAND} -E echo "libvssdag: OK")
-add_test(NAME check_vdr_light COMMAND ${CMAKE_COMMAND} -E echo "vdr-light: OK")
+add_test(NAME check_vep_dds COMMAND ${CMAKE_COMMAND} -E echo "vep-dds: OK")
 
 # ============================================================================
 # Probes
 # ============================================================================
 
-# NOTE: vdr_can_simulator removed - use vdr-light's vdr_vssdag_probe instead
+# NOTE: vdr_can_simulator removed - use vep-dds's vdr_vssdag_probe instead
 # which provides the same CAN simulation -> libvssdag -> DDS functionality
 
 # vdr_exporter - wrapper that wires subscriber + our compressed sink
@@ -304,7 +274,7 @@ if(kuksa_FOUND)
 
     target_link_libraries(kuksa_dds_bridge_lib PUBLIC
         kuksa                 # From libkuksa-cpp (alias for kuksa_cpp)
-        vdr_common            # From vdr-light: DDS wrappers
+        vdr_common            # From vep-dds: DDS wrappers
         telemetry_idl         # Our IDL types
         nlohmann_json::nlohmann_json
         glog::glog
@@ -346,7 +316,7 @@ target_include_directories(rt_dds_bridge_lib PUBLIC
 )
 
 target_link_libraries(rt_dds_bridge_lib PUBLIC
-    vdr_common            # From vdr-light: DDS wrappers
+    vdr_common            # From vep-dds: DDS wrappers
     telemetry_idl         # Our IDL types
     glog::glog
 )
@@ -384,13 +354,13 @@ add_test(NAME integration_cloud_backend_runs
 # ============================================================================
 
 message(STATUS "")
-message(STATUS "=== COVESA IFEX VDR Integration Build Configuration ===")
+message(STATUS "=== VEP-Core Build Configuration ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "CycloneDDS: ${CycloneDDS_VERSION}")
 message(STATUS "")
-message(STATUS "Libraries:")
-message(STATUS "  vdr-light: ${VDR_LIGHT_DIR} (vdr_common only)")
+message(STATUS "Dependencies:")
+message(STATUS "  vep-dds: vdr_common (DDS utilities)")
 message(STATUS "  libvssdag: ${vssdag_FOUND}")
 message(STATUS "  libkuksa-cpp: ${kuksa_FOUND}")
 message(STATUS "  zstd: ${ZSTD_VERSION}")
@@ -404,7 +374,7 @@ endif()
 message(STATUS "    - rt_dds_bridge_lib     (DDS <-> RT transport bridge)")
 message(STATUS "  Probes:")
 message(STATUS "    - vdr_exporter          (DDS subscriber -> compressed MQTT)")
-message(STATUS "    (Use vdr-light's vdr_vssdag_probe for CAN simulation)")
+message(STATUS "    (Use vep-dds's vdr_vssdag_probe for CAN simulation)")
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
