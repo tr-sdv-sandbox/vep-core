@@ -42,6 +42,15 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MOSQUITTO REQUIRED libmosquitto)
 pkg_check_modules(ZSTD REQUIRED libzstd)
 
+# yaml-cpp compatibility: older versions use 'yaml-cpp' target, newer use 'yaml-cpp::yaml-cpp'
+if(NOT TARGET yaml-cpp::yaml-cpp)
+    if(TARGET yaml-cpp)
+        add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
+    else()
+        message(FATAL_ERROR "yaml-cpp target not found")
+    endif()
+endif()
+
 # ============================================================================
 # Compile our telemetry IDL (imports types from libvss-types)
 # ============================================================================
