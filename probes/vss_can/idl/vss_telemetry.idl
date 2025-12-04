@@ -1,0 +1,42 @@
+// Copyright 2025 Vehicle Edge Platform Contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// VSS CAN Probe - DDS IDL definitions
+//
+// Defines message types for VSS (Vehicle Signal Specification) signals
+// transformed from CAN bus data.
+
+#include "vss_types.idl"
+#include "vss_signal.idl"
+
+module vss_telemetry {
+
+    // Re-export vss::Signal as the primary topic type
+    // The vss::Signal from libvss-types is the main output
+
+    // ================================================================
+    // VEHICLE EVENTS (VSS-context events)
+    // ================================================================
+
+    enum Severity {
+        SEVERITY_INFO,
+        SEVERITY_WARNING,
+        SEVERITY_ERROR,
+        SEVERITY_CRITICAL
+    };
+
+    /**
+     * A vehicle event with VSS signal context.
+     */
+    struct VssEvent {
+        string event_id;                     // Unique event identifier
+        vss::types::Header header;
+        string category;                     // "ADAS", "POWERTRAIN", etc.
+        string event_type;                   // "harsh_brake", "dtc", etc.
+        Severity severity;
+        sequence<vss::types::KeyValue> attributes;  // Event-specific attributes
+        sequence<vss::Signal> context;       // Signal snapshot at event time
+    };
+    #pragma keylist VssEvent event_id
+
+}; // module vss_telemetry
