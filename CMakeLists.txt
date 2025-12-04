@@ -189,9 +189,21 @@ target_include_directories(vdr_exporter_lib PUBLIC
     ${ZSTD_INCLUDE_DIRS}
 )
 
+# Exporter links all probe IDLs to receive all message types
+set(EXPORTER_IDL_TARGETS telemetry_idl)  # Legacy IDL for backward compat
+if(TARGET vss_can_idl)
+    list(APPEND EXPORTER_IDL_TARGETS vss_can_idl)
+endif()
+if(TARGET otel_idl)
+    list(APPEND EXPORTER_IDL_TARGETS otel_idl)
+endif()
+if(TARGET avtp_idl)
+    list(APPEND EXPORTER_IDL_TARGETS avtp_idl)
+endif()
+
 target_link_libraries(vdr_exporter_lib PUBLIC
     vdr_common         # From vep-dds: DDS wrappers
-    telemetry_idl      # Our IDL types
+    ${EXPORTER_IDL_TARGETS}  # All IDL types (legacy + per-probe)
     transfer_proto     # Our protobuf transfer types
     glog::glog
     ${MOSQUITTO_LIBRARIES}
@@ -211,11 +223,12 @@ add_test(NAME check_vssdag COMMAND ${CMAKE_COMMAND} -E echo "libvssdag: OK")
 add_test(NAME check_vep_dds COMMAND ${CMAKE_COMMAND} -E echo "vep-dds: OK")
 
 # ============================================================================
-# Probes
+# Probes (each has its own IDL)
 # ============================================================================
 
-# NOTE: vdr_can_simulator removed - use vep-dds's vdr_vssdag_probe instead
-# which provides the same CAN simulation -> libvssdag -> DDS functionality
+add_subdirectory(probes)
+
+message(STATUS "Probes:")
 
 # vdr_exporter - wrapper that wires subscriber + our compressed sink
 add_executable(vdr_exporter
@@ -372,9 +385,18 @@ if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge_lib  (Kuksa <-> DDS bridge)")
 endif()
 message(STATUS "    - rt_dds_bridge_lib     (DDS <-> RT transport bridge)")
-message(STATUS "  Probes:")
+message(STATUS "  Probes (in probes/ subdirectory):")
+if(TARGET vdr_vss_can_probe)
+message(STATUS "    - vdr_vss_can_probe     (CAN -> VSS -> DDS)")
+endif()
+if(TARGET vdr_otel_probe)
+message(STATUS "    - vdr_otel_probe        (OTLP gRPC -> DDS)")
+endif()
+if(TARGET vdr_avtp_probe)
+message(STATUS "    - vdr_avtp_probe        (IEEE 1722 AVTP -> DDS)")
+endif()
+message(STATUS "  Bridges/Exporters:")
 message(STATUS "    - vdr_exporter          (DDS subscriber -> compressed MQTT)")
-message(STATUS "    (Use vep-dds's vdr_vssdag_probe for CAN simulation)")
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
