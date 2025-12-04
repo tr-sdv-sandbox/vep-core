@@ -93,6 +93,7 @@ foreach(PROTO_FILE ${OTLP_PROTO_FILES})
             OUTPUT ${PROTO_SRC} ${GRPC_SRC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROTO_OUTPUT_DIR}/${PROTO_REL_DIR}
             COMMAND ${PROTOC_EXECUTABLE}
+                --experimental_allow_proto3_optional
                 --proto_path=${OTEL_PROTO_DIR}
                 --cpp_out=${PROTO_OUTPUT_DIR}
                 --grpc_out=${PROTO_OUTPUT_DIR}
@@ -106,6 +107,7 @@ foreach(PROTO_FILE ${OTLP_PROTO_FILES})
             OUTPUT ${PROTO_SRC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROTO_OUTPUT_DIR}/${PROTO_REL_DIR}
             COMMAND ${PROTOC_EXECUTABLE}
+                --experimental_allow_proto3_optional
                 --proto_path=${OTEL_PROTO_DIR}
                 --cpp_out=${PROTO_OUTPUT_DIR}
                 ${PROTO_FILE}

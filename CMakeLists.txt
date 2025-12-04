@@ -170,6 +170,7 @@ set(TRANSFER_PROTO_HDR ${PROTO_OUTPUT_DIR}/transfer.pb.h)
 add_custom_command(
     OUTPUT ${TRANSFER_PROTO_SRC} ${TRANSFER_PROTO_HDR}
     COMMAND ${PROTOC_EXECUTABLE}
+        --experimental_allow_proto3_optional
         --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/proto
         --cpp_out=${PROTO_OUTPUT_DIR}
         ${TRANSFER_PROTO}
