@@ -154,7 +154,7 @@ bool parse_acf_can(const uint8_t* data, size_t len,
     // Get CAN message details using Open1722 API
     uint32_t can_id = Avtp_Can_GetCanIdentifier(can_pdu);
     uint8_t bus_id = Avtp_Can_GetCanBusId(can_pdu);
-    uint8_t pad = Avtp_Can_GetPad(can_pdu);
+    [[maybe_unused]] uint8_t pad = Avtp_Can_GetPad(can_pdu);
     uint8_t mtv = Avtp_Can_GetMtv(can_pdu);
     uint8_t rtr = Avtp_Can_GetRtr(can_pdu);
     uint8_t eff = Avtp_Can_GetEff(can_pdu);
