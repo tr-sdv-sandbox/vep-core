@@ -62,8 +62,8 @@ file(MAKE_DIRECTORY ${PROTO_OUTPUT_DIR})
 find_program(PROTOC_EXECUTABLE protoc REQUIRED)
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
-# OpenTelemetry proto files location
-set(OTEL_PROTO_DIR "${CMAKE_SOURCE_DIR}/components/vep-dds/proto")
+# OpenTelemetry proto files location (local to vep-core)
+set(OTEL_PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../proto")
 
 set(OTLP_PROTO_FILES
     ${OTEL_PROTO_DIR}/opentelemetry/proto/common/v1/common.proto
