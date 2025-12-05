@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// @file otel_bridge/main.cpp
+/// @file probes/otel/main.cpp
 /// @brief OTLP-to-DDS Bridge Probe
 ///
 /// Receives OpenTelemetry metrics and logs via gRPC (OTLP protocol)
