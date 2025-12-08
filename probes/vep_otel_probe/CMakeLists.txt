@@ -1,6 +1,8 @@
-# OTEL Probe - OpenTelemetry OTLP to DDS
+# VEP OTEL Probe - OpenTelemetry OTLP to DDS
 #
 # Receives OTLP metrics and logs via gRPC and publishes to DDS.
+#
+# IDL types come from vep-schema (compiled in top-level CMakeLists.txt)
 
 find_package(Protobuf REQUIRED)
 find_package(gRPC CONFIG QUIET)
@@ -8,49 +10,6 @@ if(NOT gRPC_FOUND)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GRPC REQUIRED grpc++ grpc)
 endif()
-
-# ============================================================================
-# Compile probe IDL (uses vss_types.idl from libvss-types)
-# ============================================================================
-
-find_program(IDLC_EXECUTABLE idlc REQUIRED)
-
-set(IDL_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
-file(MAKE_DIRECTORY ${IDL_OUTPUT_DIR})
-
-# libvss-types IDL location
-set(LIBVSS_TYPES_IDL_DIR "${CMAKE_SOURCE_DIR}/components/libvss-types/idl")
-
-set(OTEL_TELEMETRY_IDL ${CMAKE_CURRENT_SOURCE_DIR}/idl/otel_telemetry.idl)
-set(VSS_TYPES_IDL ${LIBVSS_TYPES_IDL_DIR}/vss_types.idl)
-
-# Generated files
-set(IDL_SRCS
-    ${IDL_OUTPUT_DIR}/vss_types.c
-    ${IDL_OUTPUT_DIR}/otel_telemetry.c
-)
-set(IDL_HDRS
-    ${IDL_OUTPUT_DIR}/vss_types.h
-    ${IDL_OUTPUT_DIR}/otel_telemetry.h
-)
-
-# Compile IDL files in dependency order
-add_custom_command(
-    OUTPUT ${IDL_SRCS} ${IDL_HDRS}
-    COMMAND ${IDLC_EXECUTABLE} -l c ${VSS_TYPES_IDL}
-    COMMAND ${IDLC_EXECUTABLE} -l c -I${LIBVSS_TYPES_IDL_DIR} ${OTEL_TELEMETRY_IDL}
-    WORKING_DIRECTORY ${IDL_OUTPUT_DIR}
-    DEPENDS ${VSS_TYPES_IDL} ${OTEL_TELEMETRY_IDL}
-    COMMENT "Compiling OTEL probe IDL (with libvss-types)"
-)
-
-add_library(otel_idl STATIC ${IDL_SRCS})
-set_target_properties(otel_idl PROPERTIES LINKER_LANGUAGE C)
-target_include_directories(otel_idl PUBLIC ${IDL_OUTPUT_DIR})
-target_link_libraries(otel_idl PUBLIC CycloneDDS::ddsc)
-
-add_custom_target(generate_otel_idl DEPENDS ${IDL_SRCS} ${IDL_HDRS})
-add_dependencies(otel_idl generate_otel_idl)
 
 # ============================================================================
 # OTLP Proto Library
@@ -129,23 +88,15 @@ endif()
 # Probe executable
 # ============================================================================
 
-add_executable(vdr_otel_probe main.cpp)
+add_executable(vep_otel_probe main.cpp)
 
-target_include_directories(vdr_otel_probe PRIVATE
-    ${IDL_OUTPUT_DIR}
+target_include_directories(vep_otel_probe PRIVATE
     ${PROTO_OUTPUT_DIR}
 )
 
-target_link_libraries(vdr_otel_probe PRIVATE
+target_link_libraries(vep_otel_probe PRIVATE
     vdr_common
-    otel_idl
+    vep_idl
     otel_probe_proto
     glog::glog
 )
-
-# ============================================================================
-# Export IDL library for exporter
-# ============================================================================
-
-set(OTEL_IDL_TARGET otel_idl PARENT_SCOPE)
-set(OTEL_IDL_INCLUDE_DIR ${IDL_OUTPUT_DIR} PARENT_SCOPE)

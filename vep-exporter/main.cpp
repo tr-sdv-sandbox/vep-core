@@ -2,22 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// @file main.cpp
-/// @brief VDR Exporter - Subscribes to DDS topics and exports via compressed MQTT
+/// @brief VEP Exporter - Subscribes to DDS topics and exports via compressed MQTT
 ///
-/// This application wires vdr-light's SubscriptionManager with our
-/// CompressedMqttSink to create a bandwidth-efficient vehicle-to-cloud
-/// data export pipeline.
+/// This application wires SubscriptionManager with CompressedMqttSink
+/// to create a bandwidth-efficient vehicle-to-cloud data export pipeline.
 ///
 /// Architecture:
 ///   DDS Topics → SubscriptionManager → CompressedMqttSink → MQTT Broker
 ///
 /// Usage:
-///   vdr_exporter [--config config.yaml]
+///   vep_exporter [--config config.yaml]
 
 #include "common/dds_wrapper.hpp"
-#include "exporter/compressed_mqtt_sink.hpp"
-#include "exporter/subscriber.hpp"
-#include "vss_signal.h"
+#include "compressed_mqtt_sink.hpp"
+#include "subscriber.hpp"
+#include "vss-signal.h"
 
 #include <glog/logging.h>
 #include <yaml-cpp/yaml.h>
@@ -189,35 +188,35 @@ int main(int argc, char* argv[]) {
     integration::SubscriptionManager sub_manager(participant, config.sub);
 
     // Wire callbacks to sink
-    sub_manager.on_vss_signal([&mqtt_sink](const vss_Signal& msg) {
+    sub_manager.on_vss_signal([&mqtt_sink](const vep_VssSignal& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_event([&mqtt_sink](const telemetry_events_Event& msg) {
+    sub_manager.on_event([&mqtt_sink](const vep_Event& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_gauge([&mqtt_sink](const telemetry_metrics_Gauge& msg) {
+    sub_manager.on_gauge([&mqtt_sink](const vep_OtelGauge& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_counter([&mqtt_sink](const telemetry_metrics_Counter& msg) {
+    sub_manager.on_counter([&mqtt_sink](const vep_OtelCounter& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_histogram([&mqtt_sink](const telemetry_metrics_Histogram& msg) {
+    sub_manager.on_histogram([&mqtt_sink](const vep_OtelHistogram& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_log_entry([&mqtt_sink](const telemetry_logs_LogEntry& msg) {
+    sub_manager.on_log_entry([&mqtt_sink](const vep_OtelLogEntry& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_scalar_measurement([&mqtt_sink](const telemetry_diagnostics_ScalarMeasurement& msg) {
+    sub_manager.on_scalar_measurement([&mqtt_sink](const vep_ScalarMeasurement& msg) {
         mqtt_sink.send(msg);
     });
 
-    sub_manager.on_vector_measurement([&mqtt_sink](const telemetry_diagnostics_VectorMeasurement& msg) {
+    sub_manager.on_vector_measurement([&mqtt_sink](const vep_VectorMeasurement& msg) {
         mqtt_sink.send(msg);
     });
 

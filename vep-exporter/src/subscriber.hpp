@@ -22,8 +22,11 @@
 /// Uses types from telemetry.idl (which imports vss_signal.idl from libvss-types).
 
 #include "common/dds_wrapper.hpp"
-#include "telemetry.h"
-#include "vss_signal.h"
+#include "events.h"
+#include "otel-metrics.h"
+#include "otel-logs.h"
+#include "diagnostics.h"
+#include "vss-signal.h"
 
 #include <functional>
 #include <memory>
@@ -37,14 +40,14 @@ namespace integration {
 /*
  * Callback types for received data.
  */
-using VssSignalCallback = std::function<void(const vss_Signal&)>;
-using EventCallback = std::function<void(const telemetry_events_Event&)>;
-using GaugeCallback = std::function<void(const telemetry_metrics_Gauge&)>;
-using CounterCallback = std::function<void(const telemetry_metrics_Counter&)>;
-using HistogramCallback = std::function<void(const telemetry_metrics_Histogram&)>;
-using LogEntryCallback = std::function<void(const telemetry_logs_LogEntry&)>;
-using ScalarMeasurementCallback = std::function<void(const telemetry_diagnostics_ScalarMeasurement&)>;
-using VectorMeasurementCallback = std::function<void(const telemetry_diagnostics_VectorMeasurement&)>;
+using VssSignalCallback = std::function<void(const vep_VssSignal&)>;
+using EventCallback = std::function<void(const vep_Event&)>;
+using GaugeCallback = std::function<void(const vep_OtelGauge&)>;
+using CounterCallback = std::function<void(const vep_OtelCounter&)>;
+using HistogramCallback = std::function<void(const vep_OtelHistogram&)>;
+using LogEntryCallback = std::function<void(const vep_OtelLogEntry&)>;
+using ScalarMeasurementCallback = std::function<void(const vep_ScalarMeasurement&)>;
+using VectorMeasurementCallback = std::function<void(const vep_VectorMeasurement&)>;
 
 /*
  * Subscription configuration.

@@ -52,72 +52,13 @@ if(NOT TARGET yaml-cpp::yaml-cpp)
 endif()
 
 # ============================================================================
-# Compile our telemetry IDL (imports types from libvss-types)
+# IDL from vep-schema (compiled at top-level CMakeLists.txt)
 # ============================================================================
+# vep_idl target is created at top-level and available to all components
 
-find_program(IDLC_EXECUTABLE idlc REQUIRED)
-
-set(IDL_OUTPUT_DIR ${CMAKE_BINARY_DIR}/generated_idl)
-file(MAKE_DIRECTORY ${IDL_OUTPUT_DIR})
-
-# Paths to libvss-types IDL files
-set(LIBVSS_TYPES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libvss-types")
-set(LIBVSS_TYPES_IDL_DIR "${LIBVSS_TYPES_DIR}/idl")
-
-set(TELEMETRY_IDL ${CMAKE_CURRENT_SOURCE_DIR}/idl/telemetry.idl)
-set(VSS_TYPES_IDL ${LIBVSS_TYPES_IDL_DIR}/vss_types.idl)
-set(VSS_SIGNAL_IDL ${LIBVSS_TYPES_IDL_DIR}/vss_signal.idl)
-
-# Generated files
-set(VSS_TYPES_IDL_SRC ${IDL_OUTPUT_DIR}/vss_types.c)
-set(VSS_TYPES_IDL_HDR ${IDL_OUTPUT_DIR}/vss_types.h)
-set(VSS_SIGNAL_IDL_SRC ${IDL_OUTPUT_DIR}/vss_signal.c)
-set(VSS_SIGNAL_IDL_HDR ${IDL_OUTPUT_DIR}/vss_signal.h)
-set(TELEMETRY_IDL_SRC ${IDL_OUTPUT_DIR}/telemetry.c)
-set(TELEMETRY_IDL_HDR ${IDL_OUTPUT_DIR}/telemetry.h)
-
-# Step 1: Compile vss_types.idl (no dependencies)
-add_custom_command(
-    OUTPUT ${VSS_TYPES_IDL_SRC} ${VSS_TYPES_IDL_HDR}
-    COMMAND ${IDLC_EXECUTABLE} -l c ${VSS_TYPES_IDL}
-    WORKING_DIRECTORY ${IDL_OUTPUT_DIR}
-    DEPENDS ${VSS_TYPES_IDL}
-    COMMENT "Compiling vss_types.idl"
-)
-
-# Step 2: Compile vss_signal.idl (depends on vss_types)
-add_custom_command(
-    OUTPUT ${VSS_SIGNAL_IDL_SRC} ${VSS_SIGNAL_IDL_HDR}
-    COMMAND ${IDLC_EXECUTABLE} -l c -I${LIBVSS_TYPES_IDL_DIR} ${VSS_SIGNAL_IDL}
-    WORKING_DIRECTORY ${IDL_OUTPUT_DIR}
-    DEPENDS ${VSS_SIGNAL_IDL} ${VSS_TYPES_IDL_HDR}
-    COMMENT "Compiling vss_signal.idl"
-)
-
-# Step 3: Compile telemetry.idl (depends on vss_types and vss_signal)
-add_custom_command(
-    OUTPUT ${TELEMETRY_IDL_SRC} ${TELEMETRY_IDL_HDR}
-    COMMAND ${IDLC_EXECUTABLE} -l c -I${LIBVSS_TYPES_IDL_DIR} ${TELEMETRY_IDL}
-    WORKING_DIRECTORY ${IDL_OUTPUT_DIR}
-    DEPENDS ${TELEMETRY_IDL} ${VSS_TYPES_IDL_HDR} ${VSS_SIGNAL_IDL_HDR}
-    COMMENT "Compiling telemetry.idl (with libvss-types includes)"
-)
-
-add_library(telemetry_idl STATIC
-    ${VSS_TYPES_IDL_SRC}
-    ${VSS_SIGNAL_IDL_SRC}
-    ${TELEMETRY_IDL_SRC}
-)
-set_target_properties(telemetry_idl PROPERTIES LINKER_LANGUAGE C)
-target_include_directories(telemetry_idl PUBLIC ${IDL_OUTPUT_DIR})
-target_link_libraries(telemetry_idl PUBLIC CycloneDDS::ddsc)
-
-add_custom_target(generate_idl DEPENDS
-    ${VSS_TYPES_IDL_SRC} ${VSS_TYPES_IDL_HDR}
-    ${VSS_SIGNAL_IDL_SRC} ${VSS_SIGNAL_IDL_HDR}
-    ${TELEMETRY_IDL_SRC} ${TELEMETRY_IDL_HDR}
-)
-add_dependencies(telemetry_idl generate_idl)
+if(NOT TARGET vep_idl)
+    message(FATAL_ERROR "vep_idl target not found. Build from vehicle-edge-platform top-level.")
+endif()
 
 # ============================================================================
 # Include vep-dds (provides vdr_common - IDL-agnostic DDS utilities)
@@ -182,41 +123,46 @@ target_include_directories(transfer_proto PUBLIC ${PROTO_OUTPUT_DIR})
 target_link_libraries(transfer_proto PUBLIC protobuf::libprotobuf)
 
 # ============================================================================
-# Exporter library (protobuf + zstd compressed MQTT sink)
+# VEP Exporter (top-level application: DDS -> compressed MQTT)
 # ============================================================================
 
-add_library(vdr_exporter_lib STATIC
-    src/exporter/compressed_mqtt_sink.cpp
-    src/exporter/dds_proto_conversion.cpp
-    src/exporter/subscriber.cpp
+# Exporter library (protobuf + zstd compressed MQTT sink)
+add_library(vep_exporter_lib STATIC
+    vep-exporter/src/compressed_mqtt_sink.cpp
+    vep-exporter/src/dds_proto_conversion.cpp
+    vep-exporter/src/subscriber.cpp
 )
 
-target_include_directories(vdr_exporter_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_include_directories(vep_exporter_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/vep-exporter/src
     ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
     ${ZSTD_INCLUDE_DIRS}
 )
 
-# Exporter links all probe IDLs to receive all message types
-set(EXPORTER_IDL_TARGETS telemetry_idl)  # Legacy IDL for backward compat
-if(TARGET vss_can_idl)
-    list(APPEND EXPORTER_IDL_TARGETS vss_can_idl)
-endif()
-if(TARGET otel_idl)
-    list(APPEND EXPORTER_IDL_TARGETS otel_idl)
-endif()
-if(TARGET avtp_idl)
-    list(APPEND EXPORTER_IDL_TARGETS avtp_idl)
-endif()
-
-target_link_libraries(vdr_exporter_lib PUBLIC
+# Exporter links vep_idl which contains all message types
+target_link_libraries(vep_exporter_lib PUBLIC
     vdr_common         # From vep-dds: DDS wrappers
-    ${EXPORTER_IDL_TARGETS}  # All IDL types (legacy + per-probe)
+    vep_idl            # All IDL types from vep-schema
     transfer_proto     # Our protobuf transfer types
     glog::glog
     ${MOSQUITTO_LIBRARIES}
     ${ZSTD_LIBRARIES}
+)
+
+# Exporter executable
+add_executable(vep_exporter
+    vep-exporter/main.cpp
+)
+
+target_include_directories(vep_exporter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/vep-exporter/src
+)
+
+target_link_libraries(vep_exporter PRIVATE
+    vep_exporter_lib
+    yaml-cpp::yaml-cpp
+    glog::glog
 )
 
 # ============================================================================
@@ -239,38 +185,23 @@ add_subdirectory(probes)
 
 message(STATUS "Probes:")
 
-# vdr_exporter - wrapper that wires subscriber + our compressed sink
-add_executable(vdr_exporter
-    examples/apps/vdr_exporter/main.cpp
-)
-
-target_include_directories(vdr_exporter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(vdr_exporter PRIVATE
-    vdr_exporter_lib    # Our exporter library
-    yaml-cpp::yaml-cpp
-    glog::glog
-)
-
 # ============================================================================
 # Tools (test utilities)
 # ============================================================================
 
-# cloud_backend_sim - receives MQTT messages, decodes and displays
-add_executable(cloud_backend_sim
-    tools/cloud_backend/main.cpp
+# vep_mqtt_receiver - receives MQTT messages, decodes and displays
+add_executable(vep_mqtt_receiver
+    tools/vep_mqtt_receiver/main.cpp
 )
 
-target_include_directories(cloud_backend_sim PRIVATE
+target_include_directories(vep_mqtt_receiver PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
     ${ZSTD_INCLUDE_DIRS}
 )
 
-target_link_libraries(cloud_backend_sim PRIVATE
+target_link_libraries(vep_mqtt_receiver PRIVATE
     transfer_proto
     nlohmann_json::nlohmann_json
     glog::glog
@@ -364,11 +295,11 @@ add_test(NAME integration_rt_dds_bridge_runs
 # ============================================================================
 
 add_test(NAME integration_exporter_runs
-    COMMAND vdr_exporter --help
+    COMMAND vep_exporter --help
 )
 
-add_test(NAME integration_cloud_backend_runs
-    COMMAND cloud_backend_sim --help
+add_test(NAME integration_vep_mqtt_receiver_runs
+    COMMAND vep_mqtt_receiver --help
 )
 
 # ============================================================================
@@ -389,29 +320,29 @@ message(STATUS "  zstd: ${ZSTD_VERSION}")
 message(STATUS "")
 message(STATUS "Components:")
 message(STATUS "  Libraries:")
-message(STATUS "    - vdr_exporter_lib      (protobuf + zstd compressed MQTT sink)")
+message(STATUS "    - vep_exporter_lib      (protobuf + zstd compressed MQTT sink)")
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge_lib  (Kuksa <-> DDS bridge)")
 endif()
 message(STATUS "    - rt_dds_bridge_lib     (DDS <-> RT transport bridge)")
 message(STATUS "  Probes (in probes/ subdirectory):")
-if(TARGET vdr_vss_can_probe)
-message(STATUS "    - vdr_vss_can_probe     (CAN -> VSS -> DDS)")
+if(TARGET vep_can_probe)
+message(STATUS "    - vep_can_probe         (CAN -> VSS -> DDS)")
 endif()
-if(TARGET vdr_otel_probe)
-message(STATUS "    - vdr_otel_probe        (OTLP gRPC -> DDS)")
+if(TARGET vep_otel_probe)
+message(STATUS "    - vep_otel_probe        (OTLP gRPC -> DDS)")
 endif()
-if(TARGET vdr_avtp_probe)
-message(STATUS "    - vdr_avtp_probe        (IEEE 1722 AVTP -> DDS)")
+if(TARGET vep_avtp_probe)
+message(STATUS "    - vep_avtp_probe        (IEEE 1722 AVTP -> DDS)")
 endif()
 message(STATUS "  Bridges/Exporters:")
-message(STATUS "    - vdr_exporter          (DDS subscriber -> compressed MQTT)")
+message(STATUS "    - vep_exporter          (DDS subscriber -> compressed MQTT)")
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
 message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport bridge)")
 message(STATUS "  Tools:")
-message(STATUS "    - cloud_backend_sim     (MQTT -> decompress -> display)")
+message(STATUS "    - vep_mqtt_receiver     (MQTT -> decompress -> display)")
 message(STATUS "")
 message(STATUS "Kuksa-DDS Bridge: ${KUKSA_BRIDGE_ENABLED}")
 message(STATUS "")

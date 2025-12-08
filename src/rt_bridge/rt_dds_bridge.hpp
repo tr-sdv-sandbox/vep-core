@@ -23,8 +23,7 @@
 #include "bridge/rt_transport.hpp"
 
 #include "common/dds_wrapper.hpp"
-#include "telemetry.h"
-#include "vss_signal.h"
+#include "vss-signal.h"
 
 #include <atomic>
 #include <memory>
@@ -93,7 +92,7 @@ public:
 
 private:
     // DDS target handler - called when actuator targets arrive from DDS
-    void on_dds_actuator_target(const vss_Signal& signal);
+    void on_dds_actuator_target(const vep_VssSignal& signal);
 
     // RT actual handler - called when RT reports actual values
     void on_rt_actual(const std::string& path, const bridge::ActuatorValue& value);
@@ -102,7 +101,7 @@ private:
     void publish_actual_to_dds(const std::string& path, const bridge::ActuatorValue& value);
 
     // Convert DDS signal to ActuatorValue
-    bridge::ActuatorValue dds_to_actuator_value(const vss_Signal& signal);
+    bridge::ActuatorValue dds_to_actuator_value(const vep_VssSignal& signal);
 
     RtBridgeConfig config_;
 

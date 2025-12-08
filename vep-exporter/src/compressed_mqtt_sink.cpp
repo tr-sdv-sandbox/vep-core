@@ -1,8 +1,8 @@
 // Copyright 2025 COVESA IFEX VDR Integration Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "exporter/compressed_mqtt_sink.hpp"
-#include "exporter/dds_proto_conversion.hpp"
+#include "compressed_mqtt_sink.hpp"
+#include "dds_proto_conversion.hpp"
 #include "transfer.pb.h"
 
 #include <glog/logging.h>
@@ -129,7 +129,7 @@ void CompressedMqttSink::batch_loop() {
     }
 }
 
-void CompressedMqttSink::send(const vss_Signal& msg) {
+void CompressedMqttSink::send(const vep_VssSignal& msg) {
     if (!running_) return;
 
     PendingSignal sig;
@@ -154,7 +154,7 @@ void CompressedMqttSink::send(const vss_Signal& msg) {
     }
 }
 
-void CompressedMqttSink::send(const telemetry_events_Event& msg) {
+void CompressedMqttSink::send(const vep_Event& msg) {
     if (!running_) return;
 
     PendingEvent evt;
@@ -177,7 +177,7 @@ void CompressedMqttSink::send(const telemetry_events_Event& msg) {
     }
 }
 
-void CompressedMqttSink::send(const telemetry_metrics_Gauge& msg) {
+void CompressedMqttSink::send(const vep_OtelGauge& msg) {
     if (!running_) return;
 
     PendingMetric met;
@@ -200,7 +200,7 @@ void CompressedMqttSink::send(const telemetry_metrics_Gauge& msg) {
     }
 }
 
-void CompressedMqttSink::send(const telemetry_metrics_Counter& msg) {
+void CompressedMqttSink::send(const vep_OtelCounter& msg) {
     if (!running_) return;
 
     PendingMetric met;
@@ -223,19 +223,19 @@ void CompressedMqttSink::send(const telemetry_metrics_Counter& msg) {
     }
 }
 
-void CompressedMqttSink::send(const telemetry_metrics_Histogram& msg) {
+void CompressedMqttSink::send(const vep_OtelHistogram& msg) {
     // TODO: Implement histogram batching
     (void)msg;
 }
 
-void CompressedMqttSink::send(const telemetry_logs_LogEntry& msg) {
+void CompressedMqttSink::send(const vep_OtelLogEntry& msg) {
     // TODO: Implement log batching
     (void)msg;
 }
 
-void CompressedMqttSink::send(const telemetry_diagnostics_ScalarMeasurement& msg) {
+void CompressedMqttSink::send(const vep_ScalarMeasurement& msg) {
     // Map to gauge metric
-    telemetry_metrics_Gauge gauge = {};
+    vep_OtelGauge gauge = {};
     gauge.header = msg.header;
     gauge.name = msg.variable_id;
     gauge.value = msg.value;
@@ -244,7 +244,7 @@ void CompressedMqttSink::send(const telemetry_diagnostics_ScalarMeasurement& msg
     send(gauge);
 }
 
-void CompressedMqttSink::send(const telemetry_diagnostics_VectorMeasurement& msg) {
+void CompressedMqttSink::send(const vep_VectorMeasurement& msg) {
     // TODO: Implement vector measurement batching
     (void)msg;
 }
@@ -262,7 +262,7 @@ void CompressedMqttSink::flush_signals() {
     }
 
     // Build protobuf batch
-    vdr::transfer::SignalBatch batch;
+    vep::transfer::SignalBatch batch;
     batch.set_base_timestamp_ms(base_ts);
     batch.set_source_id(source_id_);
     batch.set_sequence(signal_seq_++);
@@ -305,7 +305,7 @@ void CompressedMqttSink::flush_events() {
 
     int64_t base_ts = events.empty() ? 0 : events[0].timestamp_ms;
 
-    vdr::transfer::EventBatch batch;
+    vep::transfer::EventBatch batch;
     batch.set_base_timestamp_ms(base_ts);
     batch.set_source_id(source_id_);
     batch.set_sequence(event_seq_++);
@@ -317,7 +317,7 @@ void CompressedMqttSink::flush_events() {
             static_cast<uint32_t>(evt.timestamp_ms - base_ts));
         pb_evt->set_category(evt.category);
         pb_evt->set_event_type(evt.event_type);
-        pb_evt->set_severity(static_cast<vdr::transfer::Severity>(evt.severity));
+        pb_evt->set_severity(static_cast<vep::transfer::Severity>(evt.severity));
         if (!evt.payload.empty()) {
             pb_evt->set_payload(evt.payload.data(), evt.payload.size());
         }
@@ -350,7 +350,7 @@ void CompressedMqttSink::flush_metrics() {
 
     int64_t base_ts = metrics.empty() ? 0 : metrics[0].timestamp_ms;
 
-    vdr::transfer::MetricsBatch batch;
+    vep::transfer::MetricsBatch batch;
     batch.set_base_timestamp_ms(base_ts);
     batch.set_source_id(source_id_);
     batch.set_sequence(metric_seq_++);

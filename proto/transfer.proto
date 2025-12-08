@@ -1,4 +1,4 @@
-// Copyright 2025 COVESA IFEX VDR Integration Contributors
+// Copyright 2025 Vehicle Edge Platform Contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // Lean transfer protocol for vehicle-to-cloud telemetry.
@@ -7,7 +7,7 @@
 
 syntax = "proto3";
 
-package vdr.transfer;
+package vep.transfer;
 
 option optimize_for = LITE_RUNTIME;
 
