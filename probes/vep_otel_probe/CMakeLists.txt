@@ -95,7 +95,7 @@ target_include_directories(vep_otel_probe PRIVATE
 )
 
 target_link_libraries(vep_otel_probe PRIVATE
-    vdr_common
+    vep_dds_common
     vep_idl
     otel_probe_proto
     glog::glog

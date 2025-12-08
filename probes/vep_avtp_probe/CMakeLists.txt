@@ -18,7 +18,7 @@ endif()
 add_executable(vep_avtp_probe main.cpp)
 
 target_link_libraries(vep_avtp_probe PRIVATE
-    vdr_common
+    vep_dds_common
     vep_idl
     open1722
     glog::glog

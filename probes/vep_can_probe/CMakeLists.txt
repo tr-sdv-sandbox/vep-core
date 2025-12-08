@@ -12,7 +12,7 @@
 add_executable(vep_can_probe main.cpp)
 
 target_link_libraries(vep_can_probe PRIVATE
-    vdr_common
+    vep_dds_common
     vep_idl
     vssdag
     yaml-cpp::yaml-cpp

@@ -61,11 +61,11 @@ if(NOT TARGET vep_idl)
 endif()
 
 # ============================================================================
-# Include vep-dds (provides vdr_common - IDL-agnostic DDS utilities)
+# Include vep-dds (provides vep_dds_common - IDL-agnostic DDS utilities)
 # ============================================================================
 
-if(NOT TARGET vdr_common)
-    message(FATAL_ERROR "vdr_common target not found. Build from vehicle-edge-platform top-level or ensure vep-dds is built first.")
+if(NOT TARGET vep_dds_common)
+    message(FATAL_ERROR "vep_dds_common target not found. Build from vehicle-edge-platform top-level or ensure vep-dds is built first.")
 endif()
 
 # ============================================================================
@@ -142,7 +142,7 @@ target_include_directories(vep_exporter_lib PUBLIC
 
 # Exporter links vep_idl which contains all message types
 target_link_libraries(vep_exporter_lib PUBLIC
-    vdr_common         # From vep-dds: DDS wrappers
+    vep_dds_common     # From vep-dds: DDS wrappers
     vep_idl            # All IDL types from vep-schema
     transfer_proto     # Our protobuf transfer types
     glog::glog
@@ -227,7 +227,7 @@ if(kuksa_FOUND)
 
     target_link_libraries(kuksa_dds_bridge_lib PUBLIC
         kuksa                 # From libkuksa-cpp (alias for kuksa_cpp)
-        vdr_common            # From vep-dds: DDS wrappers
+        vep_dds_common        # From vep-dds: DDS wrappers
         telemetry_idl         # Our IDL types
         nlohmann_json::nlohmann_json
         glog::glog
@@ -269,7 +269,7 @@ target_include_directories(rt_dds_bridge_lib PUBLIC
 )
 
 target_link_libraries(rt_dds_bridge_lib PUBLIC
-    vdr_common            # From vep-dds: DDS wrappers
+    vep_dds_common        # From vep-dds: DDS wrappers
     telemetry_idl         # Our IDL types
     glog::glog
 )
@@ -313,7 +313,7 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "CycloneDDS: ${CycloneDDS_VERSION}")
 message(STATUS "")
 message(STATUS "Dependencies:")
-message(STATUS "  vep-dds: vdr_common (DDS utilities)")
+message(STATUS "  vep-dds: vep_dds_common (DDS utilities)")
 message(STATUS "  libvssdag: ${vssdag_FOUND}")
 message(STATUS "  libkuksa-cpp: ${kuksa_FOUND}")
 message(STATUS "  zstd: ${ZSTD_VERSION}")
