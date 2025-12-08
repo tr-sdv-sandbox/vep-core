@@ -90,8 +90,8 @@ void CompressedMqttSink::stop() {
     flush();
 
     if (mosq_) {
-        mosquitto_loop_stop(mosq_, false);
         mosquitto_disconnect(mosq_);
+        mosquitto_loop_stop(mosq_, false);
         mosquitto_destroy(mosq_);
         mosq_ = nullptr;
     }
