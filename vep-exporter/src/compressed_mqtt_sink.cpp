@@ -56,7 +56,7 @@ bool CompressedMqttSink::start() {
     int rc = mosquitto_connect_async(mosq_, config_.broker_host.c_str(),
                                       config_.broker_port, config_.keepalive_sec);
     if (rc != MOSQ_ERR_SUCCESS) {
-        LOG(ERROR) << "MQTT connect failed: " << mosquitto_strerror(rc);
+        LOG(ERROR) << "MQTT connect failed: " << rc << ", " << mosquitto_strerror(rc);
         mosquitto_destroy(mosq_);
         mosq_ = nullptr;
         ZSTD_freeCCtx(zstd_ctx_);
