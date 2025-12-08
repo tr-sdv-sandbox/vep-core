@@ -34,8 +34,8 @@
 #include "common/dds_wrapper.hpp"
 #include "common/qos_profiles.hpp"
 #include "common/time_utils.hpp"
-#include "vss_types.h"
-#include "avtp_telemetry.h"
+#include "types.h"
+#include "avtp.h"
 
 #include <avtp/CommonHeader.h>
 #include <avtp/acf/Can.h>
@@ -138,7 +138,7 @@ int create_avtp_socket(const std::string& interface) {
 
 // Parse ACF CAN from AVTP frame
 bool parse_acf_can(const uint8_t* data, size_t len,
-                   avtp_telemetry_AcfCanFrame& out_frame,
+                   vep_AvtpCanFrame& out_frame,
                    std::vector<uint8_t>& payload_buf) {
     if (len < AVTP_CAN_HEADER_LEN) {
         return false;
@@ -195,7 +195,7 @@ bool parse_acf_can(const uint8_t* data, size_t len,
 
 // Build ACF CAN AVTP frame for transmission
 size_t build_acf_can_frame(uint8_t* buffer, size_t buffer_size,
-                           const avtp_telemetry_AcfCanFrame& frame) {
+                           const vep_AvtpCanFrame& frame) {
     if (buffer_size < MAX_AVTP_FRAME_SIZE) {
         return 0;
     }
@@ -289,20 +289,20 @@ int main(int argc, char* argv[]) {
 
         // AVTP frame topic (individual frames)
         auto frame_qos = dds::qos_profiles::reliable_standard(500);
-        dds::Topic frame_topic(participant, &avtp_telemetry_AcfCanFrame_desc,
+        dds::Topic frame_topic(participant, &vep_AvtpCanFrame_desc,
                                "rt/avtp/can/frames", frame_qos.get());
         dds::Writer frame_writer(participant, frame_topic, frame_qos.get());
 
         // Stream statistics topic
         auto stats_qos = dds::qos_profiles::best_effort(1);
-        dds::Topic stats_topic(participant, &avtp_telemetry_StreamStats_desc,
+        dds::Topic stats_topic(participant, &vep_AvtpStreamStats_desc,
                                "rt/avtp/stats", stats_qos.get());
         dds::Writer stats_writer(participant, stats_topic, stats_qos.get());
 
         // Optional: Reader for TX path (DDS -> AVTP)
         std::unique_ptr<dds::Reader> tx_reader;
         if (tx_enabled) {
-            dds::Topic tx_topic(participant, &avtp_telemetry_AcfCanFrame_desc,
+            dds::Topic tx_topic(participant, &vep_AvtpCanFrame_desc,
                                 "rt/avtp/can/tx", frame_qos.get());
             tx_reader = std::make_unique<dds::Reader>(participant, tx_topic,
                                                       frame_qos.get());
@@ -361,7 +361,7 @@ int main(int argc, char* argv[]) {
                     size_t avtp_len = rx_len - ETH_HLEN;
 
                     if (avtp_len >= AVTP_CAN_HEADER_LEN) {
-                        avtp_telemetry_AcfCanFrame frame = {};
+                        vep_AvtpCanFrame frame = {};
                         if (parse_acf_can(avtp_data, avtp_len, frame, payload_buffer)) {
                             // Use a simulated stream ID (in real case, extract from NTSCF/TSCF header)
                             uint64_t frame_stream_id = 0x0011223344556677ULL;
@@ -400,8 +400,8 @@ int main(int argc, char* argv[]) {
 
                 // TX path: read from DDS and send as AVTP
                 if (tx_reader) {
-                    tx_reader->take_each<avtp_telemetry_AcfCanFrame>(
-                        [&](const avtp_telemetry_AcfCanFrame& tx_frame) {
+                    tx_reader->take_each<vep_AvtpCanFrame>(
+                        [&](const vep_AvtpCanFrame& tx_frame) {
                             std::vector<uint8_t> tx_buffer(MAX_AVTP_FRAME_SIZE);
 
                             // Build AVTP frame
@@ -432,7 +432,7 @@ int main(int argc, char* argv[]) {
                     if (sim_speed > 120.0) sim_speed = 0.0;
 
                     // Simulate a speed CAN message (ID 0x123)
-                    avtp_telemetry_AcfCanFrame frame = {};
+                    vep_AvtpCanFrame frame = {};
                     frame.stream_id = 0x0011223344556677ULL;
                     frame.can_id = 0x123;
                     frame.bus_id = 0;
@@ -484,7 +484,7 @@ int main(int argc, char* argv[]) {
                 last_stats_publish = now;
 
                 for (auto& [sid, stats] : stream_stats) {
-                    avtp_telemetry_StreamStats stats_msg = {};
+                    vep_AvtpStreamStats stats_msg = {};
                     stats_msg.header.source_id = const_cast<char*>(source_id.c_str());
                     stats_msg.header.timestamp_ns = utils::now_ns();
                     stats_msg.header.seq_num = global_seq++;

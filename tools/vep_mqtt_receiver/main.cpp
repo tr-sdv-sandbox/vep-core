@@ -30,10 +30,10 @@ using json = nlohmann::json;
 namespace {
 
 // Forward declarations for recursive struct conversion
-json struct_value_to_json(const vdr::transfer::StructValue& sv);
-json struct_field_to_json(const vdr::transfer::StructField& field);
+json struct_value_to_json(const vep::transfer::StructValue& sv);
+json struct_field_to_json(const vep::transfer::StructField& field);
 
-json struct_value_to_json(const vdr::transfer::StructValue& sv) {
+json struct_value_to_json(const vep::transfer::StructValue& sv) {
     json j;
     j["_type"] = sv.type_name();
     for (const auto& field : sv.fields()) {
@@ -42,57 +42,57 @@ json struct_value_to_json(const vdr::transfer::StructValue& sv) {
     return j;
 }
 
-json struct_field_to_json(const vdr::transfer::StructField& field) {
+json struct_field_to_json(const vep::transfer::StructField& field) {
     switch (field.value_case()) {
-        case vdr::transfer::StructField::kBoolVal:
+        case vep::transfer::StructField::kBoolVal:
             return field.bool_val();
-        case vdr::transfer::StructField::kInt32Val:
+        case vep::transfer::StructField::kInt32Val:
             return field.int32_val();
-        case vdr::transfer::StructField::kInt64Val:
+        case vep::transfer::StructField::kInt64Val:
             return field.int64_val();
-        case vdr::transfer::StructField::kUint32Val:
+        case vep::transfer::StructField::kUint32Val:
             return field.uint32_val();
-        case vdr::transfer::StructField::kUint64Val:
+        case vep::transfer::StructField::kUint64Val:
             return field.uint64_val();
-        case vdr::transfer::StructField::kFloatVal:
+        case vep::transfer::StructField::kFloatVal:
             return field.float_val();
-        case vdr::transfer::StructField::kDoubleVal:
+        case vep::transfer::StructField::kDoubleVal:
             return field.double_val();
-        case vdr::transfer::StructField::kStringVal:
+        case vep::transfer::StructField::kStringVal:
             return field.string_val();
-        case vdr::transfer::StructField::kBoolArray: {
+        case vep::transfer::StructField::kBoolArray: {
             json arr = json::array();
             for (bool v : field.bool_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kInt32Array: {
+        case vep::transfer::StructField::kInt32Array: {
             json arr = json::array();
             for (int32_t v : field.int32_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kInt64Array: {
+        case vep::transfer::StructField::kInt64Array: {
             json arr = json::array();
             for (int64_t v : field.int64_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kFloatArray: {
+        case vep::transfer::StructField::kFloatArray: {
             json arr = json::array();
             for (float v : field.float_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kDoubleArray: {
+        case vep::transfer::StructField::kDoubleArray: {
             json arr = json::array();
             for (double v : field.double_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kStringArray: {
+        case vep::transfer::StructField::kStringArray: {
             json arr = json::array();
             for (const auto& v : field.string_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::StructField::kStructVal:
+        case vep::transfer::StructField::kStructVal:
             return struct_value_to_json(field.struct_val());
-        case vdr::transfer::StructField::kStructArray: {
+        case vep::transfer::StructField::kStructArray: {
             json arr = json::array();
             for (const auto& sv : field.struct_array().values()) {
                 arr.push_back(struct_value_to_json(sv));
@@ -104,67 +104,67 @@ json struct_field_to_json(const vdr::transfer::StructField& field) {
     }
 }
 
-json signal_value_to_json(const vdr::transfer::Signal& sig) {
+json signal_value_to_json(const vep::transfer::Signal& sig) {
     switch (sig.value_case()) {
-        case vdr::transfer::Signal::kBoolVal:
+        case vep::transfer::Signal::kBoolVal:
             return sig.bool_val();
-        case vdr::transfer::Signal::kInt32Val:
+        case vep::transfer::Signal::kInt32Val:
             return sig.int32_val();
-        case vdr::transfer::Signal::kInt64Val:
+        case vep::transfer::Signal::kInt64Val:
             return sig.int64_val();
-        case vdr::transfer::Signal::kUint32Val:
+        case vep::transfer::Signal::kUint32Val:
             return sig.uint32_val();
-        case vdr::transfer::Signal::kUint64Val:
+        case vep::transfer::Signal::kUint64Val:
             return sig.uint64_val();
-        case vdr::transfer::Signal::kFloatVal:
+        case vep::transfer::Signal::kFloatVal:
             return sig.float_val();
-        case vdr::transfer::Signal::kDoubleVal:
+        case vep::transfer::Signal::kDoubleVal:
             return sig.double_val();
-        case vdr::transfer::Signal::kStringVal:
+        case vep::transfer::Signal::kStringVal:
             return sig.string_val();
-        case vdr::transfer::Signal::kBoolArray: {
+        case vep::transfer::Signal::kBoolArray: {
             json arr = json::array();
             for (bool v : sig.bool_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kInt32Array: {
+        case vep::transfer::Signal::kInt32Array: {
             json arr = json::array();
             for (int32_t v : sig.int32_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kInt64Array: {
+        case vep::transfer::Signal::kInt64Array: {
             json arr = json::array();
             for (int64_t v : sig.int64_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kUint32Array: {
+        case vep::transfer::Signal::kUint32Array: {
             json arr = json::array();
             for (uint32_t v : sig.uint32_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kUint64Array: {
+        case vep::transfer::Signal::kUint64Array: {
             json arr = json::array();
             for (uint64_t v : sig.uint64_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kFloatArray: {
+        case vep::transfer::Signal::kFloatArray: {
             json arr = json::array();
             for (float v : sig.float_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kDoubleArray: {
+        case vep::transfer::Signal::kDoubleArray: {
             json arr = json::array();
             for (double v : sig.double_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kStringArray: {
+        case vep::transfer::Signal::kStringArray: {
             json arr = json::array();
             for (const auto& v : sig.string_array().values()) arr.push_back(v);
             return arr;
         }
-        case vdr::transfer::Signal::kStructVal:
+        case vep::transfer::Signal::kStructVal:
             return struct_value_to_json(sig.struct_val());
-        case vdr::transfer::Signal::kStructArray: {
+        case vep::transfer::Signal::kStructArray: {
             json arr = json::array();
             for (const auto& sv : sig.struct_array().values()) {
                 arr.push_back(struct_value_to_json(sv));
@@ -176,7 +176,7 @@ json signal_value_to_json(const vdr::transfer::Signal& sig) {
     }
 }
 
-std::string signal_value_to_string(const vdr::transfer::Signal& sig) {
+std::string signal_value_to_string(const vep::transfer::Signal& sig) {
     json j = signal_value_to_json(sig);
     if (j.is_null()) return "(empty)";
     if (j.is_string()) return "\"" + j.get<std::string>() + "\"";
@@ -248,27 +248,27 @@ std::vector<uint8_t> decompress(const uint8_t* data, size_t size) {
     return decompressed;
 }
 
-std::string quality_to_string(vdr::transfer::Quality q) {
+std::string quality_to_string(vep::transfer::Quality q) {
     switch (q) {
-        case vdr::transfer::QUALITY_VALID: return "VALID";
-        case vdr::transfer::QUALITY_INVALID: return "INVALID";
-        case vdr::transfer::QUALITY_NOT_AVAILABLE: return "NOT_AVAILABLE";
+        case vep::transfer::QUALITY_VALID: return "VALID";
+        case vep::transfer::QUALITY_INVALID: return "INVALID";
+        case vep::transfer::QUALITY_NOT_AVAILABLE: return "NOT_AVAILABLE";
         default: return "UNKNOWN";
     }
 }
 
-std::string severity_to_string(vdr::transfer::Severity s) {
+std::string severity_to_string(vep::transfer::Severity s) {
     switch (s) {
-        case vdr::transfer::SEVERITY_INFO: return "INFO";
-        case vdr::transfer::SEVERITY_WARNING: return "WARNING";
-        case vdr::transfer::SEVERITY_ERROR: return "ERROR";
-        case vdr::transfer::SEVERITY_CRITICAL: return "CRITICAL";
+        case vep::transfer::SEVERITY_INFO: return "INFO";
+        case vep::transfer::SEVERITY_WARNING: return "WARNING";
+        case vep::transfer::SEVERITY_ERROR: return "ERROR";
+        case vep::transfer::SEVERITY_CRITICAL: return "CRITICAL";
         default: return "UNKNOWN";
     }
 }
 
 void process_signal_batch(const std::vector<uint8_t>& data) {
-    vdr::transfer::SignalBatch batch;
+    vep::transfer::SignalBatch batch;
     if (!batch.ParseFromArray(data.data(), data.size())) {
         LOG(ERROR) << "Failed to parse SignalBatch";
         return;
@@ -329,7 +329,7 @@ void process_signal_batch(const std::vector<uint8_t>& data) {
 
             std::cout << "  [" << ts << "] " << path << " = " << signal_value_to_string(sig);
 
-            if (sig.quality() != vdr::transfer::QUALITY_VALID) {
+            if (sig.quality() != vep::transfer::QUALITY_VALID) {
                 std::cout << " [" << quality_to_string(sig.quality()) << "]";
             }
             std::cout << "\n";
@@ -338,7 +338,7 @@ void process_signal_batch(const std::vector<uint8_t>& data) {
 }
 
 void process_event_batch(const std::vector<uint8_t>& data) {
-    vdr::transfer::EventBatch batch;
+    vep::transfer::EventBatch batch;
     if (!batch.ParseFromArray(data.data(), data.size())) {
         LOG(ERROR) << "Failed to parse EventBatch";
         return;
@@ -381,7 +381,7 @@ void process_event_batch(const std::vector<uint8_t>& data) {
 }
 
 void process_metrics_batch(const std::vector<uint8_t>& data) {
-    vdr::transfer::MetricsBatch batch;
+    vep::transfer::MetricsBatch batch;
     if (!batch.ParseFromArray(data.data(), data.size())) {
         LOG(ERROR) << "Failed to parse MetricsBatch";
         return;

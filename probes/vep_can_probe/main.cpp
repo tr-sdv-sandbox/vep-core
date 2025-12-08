@@ -30,9 +30,8 @@
 #include "common/dds_wrapper.hpp"
 #include "common/qos_profiles.hpp"
 #include "common/time_utils.hpp"
-#include "vss_telemetry.h"
-#include "vss_signal.h"
-#include "vss_types.h"
+#include "vss-signal.h"
+#include "types.h"
 
 #include <vssdag/signal_processor.h>
 #include <vssdag/can/can_source.h>
@@ -63,30 +62,30 @@ void signal_handler(int signum) {
 }
 
 // Convert vss::types::SignalQuality to DDS Quality enum
-vss_types_Quality convert_quality(vss::types::SignalQuality quality) {
+vep_VssQuality convert_quality(vss::types::SignalQuality quality) {
     switch (quality) {
         case vss::types::SignalQuality::VALID:
-            return vss_types_QUALITY_VALID;
+            return vep_VSS_QUALITY_VALID;
         case vss::types::SignalQuality::INVALID:
-            return vss_types_QUALITY_INVALID;
+            return vep_VSS_QUALITY_INVALID;
         case vss::types::SignalQuality::NOT_AVAILABLE:
         default:
-            return vss_types_QUALITY_NOT_AVAILABLE;
+            return vep_VSS_QUALITY_NOT_AVAILABLE;
     }
 }
 
 // Forward declaration for recursive struct conversion
-bool convert_struct_value(vss_types_StructValue& dds_struct,
+bool convert_struct_value(vep_VssStructValue& dds_struct,
                           const vss::types::StructValue& src_struct,
                           std::vector<std::string>& string_storage,
-                          std::vector<vss_types_StructField>& field_storage);
+                          std::vector<vep_VssStructField>& field_storage);
 
 // Storage for bool arrays (std::vector<bool> doesn't have .data())
 static thread_local std::vector<std::vector<uint8_t>> bool_array_storage;
 
 // Convert a vss::types::Value to a vss_types_StructField
 // Used for struct fields (no nested struct support to avoid recursion)
-bool set_struct_field(vss_types_StructField& field,
+bool set_struct_field(vep_VssStructField& field,
                       const std::string& name,
                       const vss::types::Value& value,
                       std::vector<std::string>& string_storage) {
@@ -96,62 +95,62 @@ bool set_struct_field(vss_types_StructField& field,
 
     // Set value based on type
     if (std::holds_alternative<bool>(value)) {
-        field.type = vss_types_VALUE_TYPE_BOOL;
+        field.type = vep_VSS_VALUE_TYPE_BOOL;
         field.bool_value = std::get<bool>(value);
         return true;
     }
     if (std::holds_alternative<int8_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_INT8;
+        field.type = vep_VSS_VALUE_TYPE_INT8;
         field.int8_value = std::get<int8_t>(value);
         return true;
     }
     if (std::holds_alternative<int16_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_INT16;
+        field.type = vep_VSS_VALUE_TYPE_INT16;
         field.int16_value = std::get<int16_t>(value);
         return true;
     }
     if (std::holds_alternative<int32_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_INT32;
+        field.type = vep_VSS_VALUE_TYPE_INT32;
         field.int32_value = std::get<int32_t>(value);
         return true;
     }
     if (std::holds_alternative<int64_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_INT64;
+        field.type = vep_VSS_VALUE_TYPE_INT64;
         field.int64_value = std::get<int64_t>(value);
         return true;
     }
     if (std::holds_alternative<uint8_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_UINT8;
+        field.type = vep_VSS_VALUE_TYPE_UINT8;
         field.uint8_value = std::get<uint8_t>(value);
         return true;
     }
     if (std::holds_alternative<uint16_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_UINT16;
+        field.type = vep_VSS_VALUE_TYPE_UINT16;
         field.uint16_value = std::get<uint16_t>(value);
         return true;
     }
     if (std::holds_alternative<uint32_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_UINT32;
+        field.type = vep_VSS_VALUE_TYPE_UINT32;
         field.uint32_value = std::get<uint32_t>(value);
         return true;
     }
     if (std::holds_alternative<uint64_t>(value)) {
-        field.type = vss_types_VALUE_TYPE_UINT64;
+        field.type = vep_VSS_VALUE_TYPE_UINT64;
         field.uint64_value = std::get<uint64_t>(value);
         return true;
     }
     if (std::holds_alternative<float>(value)) {
-        field.type = vss_types_VALUE_TYPE_FLOAT;
+        field.type = vep_VSS_VALUE_TYPE_FLOAT;
         field.float_value = std::get<float>(value);
         return true;
     }
     if (std::holds_alternative<double>(value)) {
-        field.type = vss_types_VALUE_TYPE_DOUBLE;
+        field.type = vep_VSS_VALUE_TYPE_DOUBLE;
         field.double_value = std::get<double>(value);
         return true;
     }
     if (std::holds_alternative<std::string>(value)) {
-        field.type = vss_types_VALUE_TYPE_STRING;
+        field.type = vep_VSS_VALUE_TYPE_STRING;
         string_storage.push_back(std::get<std::string>(value));
         field.string_value = const_cast<char*>(string_storage.back().c_str());
         return true;
@@ -159,7 +158,7 @@ bool set_struct_field(vss_types_StructField& field,
 
     // Arrays in struct fields
     if (std::holds_alternative<std::vector<bool>>(value)) {
-        field.type = vss_types_VALUE_TYPE_BOOL_ARRAY;
+        field.type = vep_VSS_VALUE_TYPE_BOOL_ARRAY;
         const auto& arr = std::get<std::vector<bool>>(value);
         // std::vector<bool> is special - copy to uint8_t storage
         bool_array_storage.emplace_back();
@@ -172,7 +171,7 @@ bool set_struct_field(vss_types_StructField& field,
         return true;
     }
     if (std::holds_alternative<std::vector<int32_t>>(value)) {
-        field.type = vss_types_VALUE_TYPE_INT32_ARRAY;
+        field.type = vep_VSS_VALUE_TYPE_INT32_ARRAY;
         const auto& arr = std::get<std::vector<int32_t>>(value);
         field.int32_array._length = arr.size();
         field.int32_array._maximum = arr.size();
@@ -180,7 +179,7 @@ bool set_struct_field(vss_types_StructField& field,
         return true;
     }
     if (std::holds_alternative<std::vector<float>>(value)) {
-        field.type = vss_types_VALUE_TYPE_FLOAT_ARRAY;
+        field.type = vep_VSS_VALUE_TYPE_FLOAT_ARRAY;
         const auto& arr = std::get<std::vector<float>>(value);
         field.float_array._length = arr.size();
         field.float_array._maximum = arr.size();
@@ -188,7 +187,7 @@ bool set_struct_field(vss_types_StructField& field,
         return true;
     }
     if (std::holds_alternative<std::vector<double>>(value)) {
-        field.type = vss_types_VALUE_TYPE_DOUBLE_ARRAY;
+        field.type = vep_VSS_VALUE_TYPE_DOUBLE_ARRAY;
         const auto& arr = std::get<std::vector<double>>(value);
         field.double_array._length = arr.size();
         field.double_array._maximum = arr.size();
@@ -197,15 +196,15 @@ bool set_struct_field(vss_types_StructField& field,
     }
 
     // Note: Nested structs in struct fields not supported to avoid infinite recursion
-    field.type = vss_types_VALUE_TYPE_EMPTY;
+    field.type = vep_VSS_VALUE_TYPE_EMPTY;
     return false;
 }
 
 // Convert vss::types::StructValue to DDS StructValue
-bool convert_struct_value(vss_types_StructValue& dds_struct,
+bool convert_struct_value(vep_VssStructValue& dds_struct,
                           const vss::types::StructValue& src_struct,
                           std::vector<std::string>& string_storage,
-                          std::vector<vss_types_StructField>& field_storage) {
+                          std::vector<vep_VssStructField>& field_storage) {
     // Store type name
     string_storage.push_back(src_struct.type_name());
     dds_struct.type_name = const_cast<char*>(string_storage.back().c_str());
@@ -232,72 +231,72 @@ bool convert_struct_value(vss_types_StructValue& dds_struct,
 
 // Convert vss::types::Value to DDS vss_types_Value
 // Returns true if conversion succeeded, false if type not supported
-bool set_value_fields(vss_types_Value& dds_value,
+bool set_value_fields(vep_VssValue& dds_value,
                       const vss::types::Value& value,
                       std::vector<std::string>& string_storage,
-                      std::vector<vss_types_StructValue>& struct_storage,
-                      std::vector<vss_types_StructField>& field_storage) {
+                      std::vector<vep_VssStructValue>& struct_storage,
+                      std::vector<vep_VssStructField>& field_storage) {
     // Initialize to empty
     memset(&dds_value, 0, sizeof(dds_value));
 
     // Primitives
     if (std::holds_alternative<bool>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_BOOL;
+        dds_value.type = vep_VSS_VALUE_TYPE_BOOL;
         dds_value.bool_value = std::get<bool>(value);
         return true;
     }
     if (std::holds_alternative<int8_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT8;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT8;
         dds_value.int8_value = std::get<int8_t>(value);
         return true;
     }
     if (std::holds_alternative<int16_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT16;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT16;
         dds_value.int16_value = std::get<int16_t>(value);
         return true;
     }
     if (std::holds_alternative<int32_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT32;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT32;
         dds_value.int32_value = std::get<int32_t>(value);
         return true;
     }
     if (std::holds_alternative<int64_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT64;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT64;
         dds_value.int64_value = std::get<int64_t>(value);
         return true;
     }
     if (std::holds_alternative<uint8_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT8;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT8;
         dds_value.uint8_value = std::get<uint8_t>(value);
         return true;
     }
     if (std::holds_alternative<uint16_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT16;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT16;
         dds_value.uint16_value = std::get<uint16_t>(value);
         return true;
     }
     if (std::holds_alternative<uint32_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT32;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT32;
         dds_value.uint32_value = std::get<uint32_t>(value);
         return true;
     }
     if (std::holds_alternative<uint64_t>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT64;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT64;
         dds_value.uint64_value = std::get<uint64_t>(value);
         return true;
     }
     if (std::holds_alternative<float>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_FLOAT;
+        dds_value.type = vep_VSS_VALUE_TYPE_FLOAT;
         dds_value.float_value = std::get<float>(value);
         return true;
     }
     if (std::holds_alternative<double>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_DOUBLE;
+        dds_value.type = vep_VSS_VALUE_TYPE_DOUBLE;
         dds_value.double_value = std::get<double>(value);
         return true;
     }
     if (std::holds_alternative<std::string>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_STRING;
+        dds_value.type = vep_VSS_VALUE_TYPE_STRING;
         string_storage.push_back(std::get<std::string>(value));
         dds_value.string_value = const_cast<char*>(string_storage.back().c_str());
         return true;
@@ -305,7 +304,7 @@ bool set_value_fields(vss_types_Value& dds_value,
 
     // Array types
     if (std::holds_alternative<std::vector<bool>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_BOOL_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_BOOL_ARRAY;
         const auto& arr = std::get<std::vector<bool>>(value);
         // std::vector<bool> is special - copy to uint8_t storage
         bool_array_storage.emplace_back();
@@ -318,7 +317,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<int8_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT8_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT8_ARRAY;
         const auto& arr = std::get<std::vector<int8_t>>(value);
         dds_value.int8_array._length = arr.size();
         dds_value.int8_array._maximum = arr.size();
@@ -326,7 +325,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<int16_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT16_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT16_ARRAY;
         const auto& arr = std::get<std::vector<int16_t>>(value);
         dds_value.int16_array._length = arr.size();
         dds_value.int16_array._maximum = arr.size();
@@ -334,7 +333,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<int32_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT32_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT32_ARRAY;
         const auto& arr = std::get<std::vector<int32_t>>(value);
         dds_value.int32_array._length = arr.size();
         dds_value.int32_array._maximum = arr.size();
@@ -342,7 +341,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<int64_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_INT64_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_INT64_ARRAY;
         const auto& arr = std::get<std::vector<int64_t>>(value);
         dds_value.int64_array._length = arr.size();
         dds_value.int64_array._maximum = arr.size();
@@ -350,7 +349,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<uint8_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT8_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT8_ARRAY;
         const auto& arr = std::get<std::vector<uint8_t>>(value);
         dds_value.uint8_array._length = arr.size();
         dds_value.uint8_array._maximum = arr.size();
@@ -358,7 +357,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<uint16_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT16_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT16_ARRAY;
         const auto& arr = std::get<std::vector<uint16_t>>(value);
         dds_value.uint16_array._length = arr.size();
         dds_value.uint16_array._maximum = arr.size();
@@ -366,7 +365,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<uint32_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT32_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT32_ARRAY;
         const auto& arr = std::get<std::vector<uint32_t>>(value);
         dds_value.uint32_array._length = arr.size();
         dds_value.uint32_array._maximum = arr.size();
@@ -374,7 +373,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<uint64_t>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_UINT64_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_UINT64_ARRAY;
         const auto& arr = std::get<std::vector<uint64_t>>(value);
         dds_value.uint64_array._length = arr.size();
         dds_value.uint64_array._maximum = arr.size();
@@ -382,7 +381,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<float>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_FLOAT_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_FLOAT_ARRAY;
         const auto& arr = std::get<std::vector<float>>(value);
         dds_value.float_array._length = arr.size();
         dds_value.float_array._maximum = arr.size();
@@ -390,7 +389,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<double>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_DOUBLE_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_DOUBLE_ARRAY;
         const auto& arr = std::get<std::vector<double>>(value);
         dds_value.double_array._length = arr.size();
         dds_value.double_array._maximum = arr.size();
@@ -398,7 +397,7 @@ bool set_value_fields(vss_types_Value& dds_value,
         return true;
     }
     if (std::holds_alternative<std::vector<std::string>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_STRING_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_STRING_ARRAY;
         const auto& arr = std::get<std::vector<std::string>>(value);
         // String arrays require separate char* buffer management
         // For now, just store the count and log limitation
@@ -410,7 +409,7 @@ bool set_value_fields(vss_types_Value& dds_value,
 
     // Struct types
     if (std::holds_alternative<std::shared_ptr<vss::types::StructValue>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_STRUCT;
+        dds_value.type = vep_VSS_VALUE_TYPE_STRUCT;
         const auto& struct_ptr = std::get<std::shared_ptr<vss::types::StructValue>>(value);
         if (struct_ptr) {
             struct_storage.emplace_back();
@@ -424,7 +423,7 @@ bool set_value_fields(vss_types_Value& dds_value,
 
     // Struct array
     if (std::holds_alternative<std::vector<std::shared_ptr<vss::types::StructValue>>>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_STRUCT_ARRAY;
+        dds_value.type = vep_VSS_VALUE_TYPE_STRUCT_ARRAY;
         const auto& arr = std::get<std::vector<std::shared_ptr<vss::types::StructValue>>>(value);
         size_t start_idx = struct_storage.size();
         for (const auto& struct_ptr : arr) {
@@ -441,7 +440,7 @@ bool set_value_fields(vss_types_Value& dds_value,
 
     // Monostate (empty)
     if (std::holds_alternative<std::monostate>(value)) {
-        dds_value.type = vss_types_VALUE_TYPE_EMPTY;
+        dds_value.type = vep_VSS_VALUE_TYPE_EMPTY;
         return true;
     }
 
@@ -628,7 +627,7 @@ int main(int argc, char* argv[]) {
         dds::Participant participant(DDS_DOMAIN_DEFAULT);
 
         auto qos = dds::qos_profiles::reliable_standard(100);
-        dds::Topic topic(participant, &vss_Signal_desc,
+        dds::Topic topic(participant, &vep_VssSignal_desc,
                          "rt/vss/signals", qos.get());
         dds::Writer writer(participant, topic, qos.get());
 
@@ -643,8 +642,8 @@ int main(int argc, char* argv[]) {
         std::string correlation_id = "";
         std::vector<std::string> path_buffers;
         std::vector<std::string> string_storage;
-        std::vector<vss_types_StructValue> struct_storage;
-        std::vector<vss_types_StructField> field_storage;
+        std::vector<vep_VssStructValue> struct_storage;
+        std::vector<vep_VssStructField> field_storage;
 
         while (g_running) {
             std::vector<vssdag::SignalUpdate> updates;
@@ -673,7 +672,7 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
 
-                    vss_Signal msg = {};
+                    vep_VssSignal msg = {};
 
                     // Store path in buffer
                     path_buffers[i] = sig.path;

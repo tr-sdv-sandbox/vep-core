@@ -14,7 +14,7 @@
 ///
 /// Optimized for bandwidth-constrained vehicle-to-cloud links.
 
-#include "exporter/output_sink.hpp"
+#include "output_sink.hpp"
 #include "transfer.pb.h"
 
 #include <atomic>
@@ -71,14 +71,14 @@ public:
     void stop() override;
     void flush() override;
 
-    void send(const vss_Signal& msg) override;
-    void send(const telemetry_events_Event& msg) override;
-    void send(const telemetry_metrics_Gauge& msg) override;
-    void send(const telemetry_metrics_Counter& msg) override;
-    void send(const telemetry_metrics_Histogram& msg) override;
-    void send(const telemetry_logs_LogEntry& msg) override;
-    void send(const telemetry_diagnostics_ScalarMeasurement& msg) override;
-    void send(const telemetry_diagnostics_VectorMeasurement& msg) override;
+    void send(const vep_VssSignal& msg) override;
+    void send(const vep_Event& msg) override;
+    void send(const vep_OtelGauge& msg) override;
+    void send(const vep_OtelCounter& msg) override;
+    void send(const vep_OtelHistogram& msg) override;
+    void send(const vep_OtelLogEntry& msg) override;
+    void send(const vep_ScalarMeasurement& msg) override;
+    void send(const vep_VectorMeasurement& msg) override;
 
     bool healthy() const override;
     SinkStats stats() const override;
@@ -103,8 +103,8 @@ private:
     struct PendingSignal {
         std::string path;
         int64_t timestamp_ms;
-        vdr::transfer::Quality quality;
-        vdr::transfer::Signal proto_signal;  // Pre-converted protobuf
+        vep::transfer::Quality quality;
+        vep::transfer::Signal proto_signal;  // Pre-converted protobuf
     };
 
     struct PendingEvent {

@@ -1,68 +1,68 @@
 // Copyright 2025 COVESA IFEX VDR Integration Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "exporter/dds_proto_conversion.hpp"
+#include "dds_proto_conversion.hpp"
 
 namespace integration {
 
-vdr::transfer::Quality convert_quality(vss_types_Quality dds_quality) {
+vep::transfer::Quality convert_quality(vep_VssQuality dds_quality) {
     switch (dds_quality) {
-        case vss_types_QUALITY_VALID:
-            return vdr::transfer::QUALITY_VALID;
-        case vss_types_QUALITY_INVALID:
-            return vdr::transfer::QUALITY_INVALID;
-        case vss_types_QUALITY_NOT_AVAILABLE:
+        case vep_VSS_QUALITY_VALID:
+            return vep::transfer::QUALITY_VALID;
+        case vep_VSS_QUALITY_INVALID:
+            return vep::transfer::QUALITY_INVALID;
+        case vep_VSS_QUALITY_NOT_AVAILABLE:
         default:
-            return vdr::transfer::QUALITY_NOT_AVAILABLE;
+            return vep::transfer::QUALITY_NOT_AVAILABLE;
     }
 }
 
-void convert_struct_field(const vss_types_StructField& dds_field,
-                          vdr::transfer::StructField* pb_field) {
+void convert_struct_field(const vep_VssStructField& dds_field,
+                          vep::transfer::StructField* pb_field) {
     if (dds_field.name) {
         pb_field->set_name(dds_field.name);
     }
 
     switch (dds_field.type) {
-        case vss_types_VALUE_TYPE_BOOL:
+        case vep_VSS_VALUE_TYPE_BOOL:
             pb_field->set_bool_val(dds_field.bool_value);
             break;
-        case vss_types_VALUE_TYPE_INT8:
+        case vep_VSS_VALUE_TYPE_INT8:
             pb_field->set_int32_val(static_cast<int32_t>(dds_field.int8_value));
             break;
-        case vss_types_VALUE_TYPE_INT16:
+        case vep_VSS_VALUE_TYPE_INT16:
             pb_field->set_int32_val(dds_field.int16_value);
             break;
-        case vss_types_VALUE_TYPE_INT32:
+        case vep_VSS_VALUE_TYPE_INT32:
             pb_field->set_int32_val(dds_field.int32_value);
             break;
-        case vss_types_VALUE_TYPE_INT64:
+        case vep_VSS_VALUE_TYPE_INT64:
             pb_field->set_int64_val(dds_field.int64_value);
             break;
-        case vss_types_VALUE_TYPE_UINT8:
+        case vep_VSS_VALUE_TYPE_UINT8:
             pb_field->set_uint32_val(dds_field.uint8_value);
             break;
-        case vss_types_VALUE_TYPE_UINT16:
+        case vep_VSS_VALUE_TYPE_UINT16:
             pb_field->set_uint32_val(dds_field.uint16_value);
             break;
-        case vss_types_VALUE_TYPE_UINT32:
+        case vep_VSS_VALUE_TYPE_UINT32:
             pb_field->set_uint32_val(dds_field.uint32_value);
             break;
-        case vss_types_VALUE_TYPE_UINT64:
+        case vep_VSS_VALUE_TYPE_UINT64:
             pb_field->set_uint64_val(dds_field.uint64_value);
             break;
-        case vss_types_VALUE_TYPE_FLOAT:
+        case vep_VSS_VALUE_TYPE_FLOAT:
             pb_field->set_float_val(dds_field.float_value);
             break;
-        case vss_types_VALUE_TYPE_DOUBLE:
+        case vep_VSS_VALUE_TYPE_DOUBLE:
             pb_field->set_double_val(dds_field.double_value);
             break;
-        case vss_types_VALUE_TYPE_STRING:
+        case vep_VSS_VALUE_TYPE_STRING:
             pb_field->set_string_val(dds_field.string_value ? dds_field.string_value : "");
             break;
 
         // Array types - check buffer is not null before iterating
-        case vss_types_VALUE_TYPE_BOOL_ARRAY: {
+        case vep_VSS_VALUE_TYPE_BOOL_ARRAY: {
             auto* arr = pb_field->mutable_bool_array();
             if (dds_field.bool_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.bool_array._length; ++i) {
@@ -71,7 +71,7 @@ void convert_struct_field(const vss_types_StructField& dds_field,
             }
             break;
         }
-        case vss_types_VALUE_TYPE_INT32_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT32_ARRAY: {
             auto* arr = pb_field->mutable_int32_array();
             if (dds_field.int32_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.int32_array._length; ++i) {
@@ -80,7 +80,7 @@ void convert_struct_field(const vss_types_StructField& dds_field,
             }
             break;
         }
-        case vss_types_VALUE_TYPE_INT64_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT64_ARRAY: {
             auto* arr = pb_field->mutable_int64_array();
             if (dds_field.int64_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.int64_array._length; ++i) {
@@ -89,7 +89,7 @@ void convert_struct_field(const vss_types_StructField& dds_field,
             }
             break;
         }
-        case vss_types_VALUE_TYPE_FLOAT_ARRAY: {
+        case vep_VSS_VALUE_TYPE_FLOAT_ARRAY: {
             auto* arr = pb_field->mutable_float_array();
             if (dds_field.float_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.float_array._length; ++i) {
@@ -98,7 +98,7 @@ void convert_struct_field(const vss_types_StructField& dds_field,
             }
             break;
         }
-        case vss_types_VALUE_TYPE_DOUBLE_ARRAY: {
+        case vep_VSS_VALUE_TYPE_DOUBLE_ARRAY: {
             auto* arr = pb_field->mutable_double_array();
             if (dds_field.double_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.double_array._length; ++i) {
@@ -107,7 +107,7 @@ void convert_struct_field(const vss_types_StructField& dds_field,
             }
             break;
         }
-        case vss_types_VALUE_TYPE_STRING_ARRAY: {
+        case vep_VSS_VALUE_TYPE_STRING_ARRAY: {
             auto* arr = pb_field->mutable_string_array();
             if (dds_field.string_array._buffer) {
                 for (uint32_t i = 0; i < dds_field.string_array._length; ++i) {
@@ -124,8 +124,8 @@ void convert_struct_field(const vss_types_StructField& dds_field,
     }
 }
 
-void convert_struct_value(const vss_types_StructValue& dds_struct,
-                          vdr::transfer::StructValue* pb_struct) {
+void convert_struct_value(const vep_VssStructValue& dds_struct,
+                          vep::transfer::StructValue* pb_struct) {
     if (dds_struct.type_name) {
         pb_struct->set_type_name(dds_struct.type_name);
     }
@@ -138,48 +138,48 @@ void convert_struct_value(const vss_types_StructValue& dds_struct,
     }
 }
 
-bool convert_value_to_signal(const vss_types_Value& dds_value,
-                             vdr::transfer::Signal* pb_signal) {
+bool convert_value_to_signal(const vep_VssValue& dds_value,
+                             vep::transfer::Signal* pb_signal) {
     switch (dds_value.type) {
-        case vss_types_VALUE_TYPE_BOOL:
+        case vep_VSS_VALUE_TYPE_BOOL:
             pb_signal->set_bool_val(dds_value.bool_value);
             return true;
-        case vss_types_VALUE_TYPE_INT8:
+        case vep_VSS_VALUE_TYPE_INT8:
             pb_signal->set_int32_val(static_cast<int32_t>(dds_value.int8_value));
             return true;
-        case vss_types_VALUE_TYPE_INT16:
+        case vep_VSS_VALUE_TYPE_INT16:
             pb_signal->set_int32_val(dds_value.int16_value);
             return true;
-        case vss_types_VALUE_TYPE_INT32:
+        case vep_VSS_VALUE_TYPE_INT32:
             pb_signal->set_int32_val(dds_value.int32_value);
             return true;
-        case vss_types_VALUE_TYPE_INT64:
+        case vep_VSS_VALUE_TYPE_INT64:
             pb_signal->set_int64_val(dds_value.int64_value);
             return true;
-        case vss_types_VALUE_TYPE_UINT8:
+        case vep_VSS_VALUE_TYPE_UINT8:
             pb_signal->set_uint32_val(dds_value.uint8_value);
             return true;
-        case vss_types_VALUE_TYPE_UINT16:
+        case vep_VSS_VALUE_TYPE_UINT16:
             pb_signal->set_uint32_val(dds_value.uint16_value);
             return true;
-        case vss_types_VALUE_TYPE_UINT32:
+        case vep_VSS_VALUE_TYPE_UINT32:
             pb_signal->set_uint32_val(dds_value.uint32_value);
             return true;
-        case vss_types_VALUE_TYPE_UINT64:
+        case vep_VSS_VALUE_TYPE_UINT64:
             pb_signal->set_uint64_val(dds_value.uint64_value);
             return true;
-        case vss_types_VALUE_TYPE_FLOAT:
+        case vep_VSS_VALUE_TYPE_FLOAT:
             pb_signal->set_float_val(dds_value.float_value);
             return true;
-        case vss_types_VALUE_TYPE_DOUBLE:
+        case vep_VSS_VALUE_TYPE_DOUBLE:
             pb_signal->set_double_val(dds_value.double_value);
             return true;
-        case vss_types_VALUE_TYPE_STRING:
+        case vep_VSS_VALUE_TYPE_STRING:
             pb_signal->set_string_val(dds_value.string_value ? dds_value.string_value : "");
             return true;
 
         // Array types - check buffer is not null before iterating
-        case vss_types_VALUE_TYPE_BOOL_ARRAY: {
+        case vep_VSS_VALUE_TYPE_BOOL_ARRAY: {
             auto* arr = pb_signal->mutable_bool_array();
             if (dds_value.bool_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.bool_array._length; ++i) {
@@ -188,7 +188,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_INT8_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT8_ARRAY: {
             auto* arr = pb_signal->mutable_int32_array();
             if (dds_value.int8_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.int8_array._length; ++i) {
@@ -197,7 +197,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_INT16_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT16_ARRAY: {
             auto* arr = pb_signal->mutable_int32_array();
             if (dds_value.int16_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.int16_array._length; ++i) {
@@ -206,7 +206,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_INT32_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT32_ARRAY: {
             auto* arr = pb_signal->mutable_int32_array();
             if (dds_value.int32_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.int32_array._length; ++i) {
@@ -215,7 +215,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_INT64_ARRAY: {
+        case vep_VSS_VALUE_TYPE_INT64_ARRAY: {
             auto* arr = pb_signal->mutable_int64_array();
             if (dds_value.int64_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.int64_array._length; ++i) {
@@ -224,7 +224,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_UINT8_ARRAY: {
+        case vep_VSS_VALUE_TYPE_UINT8_ARRAY: {
             auto* arr = pb_signal->mutable_uint32_array();
             if (dds_value.uint8_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.uint8_array._length; ++i) {
@@ -233,7 +233,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_UINT16_ARRAY: {
+        case vep_VSS_VALUE_TYPE_UINT16_ARRAY: {
             auto* arr = pb_signal->mutable_uint32_array();
             if (dds_value.uint16_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.uint16_array._length; ++i) {
@@ -242,7 +242,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_UINT32_ARRAY: {
+        case vep_VSS_VALUE_TYPE_UINT32_ARRAY: {
             auto* arr = pb_signal->mutable_uint32_array();
             if (dds_value.uint32_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.uint32_array._length; ++i) {
@@ -251,7 +251,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_UINT64_ARRAY: {
+        case vep_VSS_VALUE_TYPE_UINT64_ARRAY: {
             auto* arr = pb_signal->mutable_uint64_array();
             if (dds_value.uint64_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.uint64_array._length; ++i) {
@@ -260,7 +260,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_FLOAT_ARRAY: {
+        case vep_VSS_VALUE_TYPE_FLOAT_ARRAY: {
             auto* arr = pb_signal->mutable_float_array();
             if (dds_value.float_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.float_array._length; ++i) {
@@ -269,7 +269,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_DOUBLE_ARRAY: {
+        case vep_VSS_VALUE_TYPE_DOUBLE_ARRAY: {
             auto* arr = pb_signal->mutable_double_array();
             if (dds_value.double_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.double_array._length; ++i) {
@@ -278,7 +278,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             }
             return true;
         }
-        case vss_types_VALUE_TYPE_STRING_ARRAY: {
+        case vep_VSS_VALUE_TYPE_STRING_ARRAY: {
             auto* arr = pb_signal->mutable_string_array();
             if (dds_value.string_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.string_array._length; ++i) {
@@ -289,12 +289,12 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
         }
 
         // Struct types
-        case vss_types_VALUE_TYPE_STRUCT: {
+        case vep_VSS_VALUE_TYPE_STRUCT: {
             auto* pb_struct = pb_signal->mutable_struct_val();
             convert_struct_value(dds_value.struct_value, pb_struct);
             return true;
         }
-        case vss_types_VALUE_TYPE_STRUCT_ARRAY: {
+        case vep_VSS_VALUE_TYPE_STRUCT_ARRAY: {
             auto* pb_arr = pb_signal->mutable_struct_array();
             if (dds_value.struct_array._buffer) {
                 for (uint32_t i = 0; i < dds_value.struct_array._length; ++i) {
@@ -305,7 +305,7 @@ bool convert_value_to_signal(const vss_types_Value& dds_value,
             return true;
         }
 
-        case vss_types_VALUE_TYPE_EMPTY:
+        case vep_VSS_VALUE_TYPE_EMPTY:
             // No value to set
             return true;
 

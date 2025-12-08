@@ -25,8 +25,7 @@
 
 #include <kuksa_cpp/kuksa.hpp>
 #include "common/dds_wrapper.hpp"
-#include "telemetry.h"
-#include "vss_signal.h"
+#include "vss-signal.h"
 
 #include <atomic>
 #include <memory>
@@ -91,16 +90,16 @@ public:
 
 private:
     // DDS signal handler - called when sensor signals arrive from DDS
-    void on_dds_signal(const vss_Signal& signal);
+    void on_dds_signal(const vep_VssSignal& signal);
 
     // DDS actuator actual handler - called when actuator actuals arrive from DDS
-    void on_dds_actuator_actual(const vss_Signal& signal);
+    void on_dds_actuator_actual(const vep_VssSignal& signal);
 
     // Actuator target handler - called when Kuksa receives actuator set request from apps
     void on_actuator_target(const std::string& path, const vss::types::Value& value);
 
     // Publish signal to Kuksa (from DDS)
-    void publish_to_kuksa(const std::string& path, const vss_Signal& signal);
+    void publish_to_kuksa(const std::string& path, const vep_VssSignal& signal);
 
     // Send actuator target to DDS (for RT bridge to pick up)
     void send_actuator_target_to_dds(const std::string& path, const vss::types::Value& value);

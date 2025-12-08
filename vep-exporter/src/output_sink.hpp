@@ -21,8 +21,11 @@
 /// Sinks receive telemetry data from VDR and forward it to external systems.
 /// Uses types generated from this project's telemetry.idl.
 
-#include "telemetry.h"
-#include "vss_signal.h"
+#include "events.h"
+#include "otel-metrics.h"
+#include "otel-logs.h"
+#include "diagnostics.h"
+#include "vss-signal.h"
 
 #include <cstdint>
 #include <string>
@@ -56,28 +59,28 @@ public:
     /// @{
 
     /// Send a VSS signal
-    virtual void send(const vss_Signal& msg) = 0;
+    virtual void send(const vep_VssSignal& msg) = 0;
 
     /// Send a vehicle event
-    virtual void send(const telemetry_events_Event& msg) = 0;
+    virtual void send(const vep_Event& msg) = 0;
 
     /// Send a gauge metric
-    virtual void send(const telemetry_metrics_Gauge& msg) = 0;
+    virtual void send(const vep_OtelGauge& msg) = 0;
 
     /// Send a counter metric
-    virtual void send(const telemetry_metrics_Counter& msg) = 0;
+    virtual void send(const vep_OtelCounter& msg) = 0;
 
     /// Send a histogram metric
-    virtual void send(const telemetry_metrics_Histogram& msg) = 0;
+    virtual void send(const vep_OtelHistogram& msg) = 0;
 
     /// Send a log entry
-    virtual void send(const telemetry_logs_LogEntry& msg) = 0;
+    virtual void send(const vep_OtelLogEntry& msg) = 0;
 
     /// Send a scalar diagnostic measurement
-    virtual void send(const telemetry_diagnostics_ScalarMeasurement& msg) = 0;
+    virtual void send(const vep_ScalarMeasurement& msg) = 0;
 
     /// Send a vector diagnostic measurement
-    virtual void send(const telemetry_diagnostics_VectorMeasurement& msg) = 0;
+    virtual void send(const vep_VectorMeasurement& msg) = 0;
 
     /// @}
 

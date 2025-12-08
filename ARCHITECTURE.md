@@ -8,13 +8,13 @@
 ├──────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                          │
 │  ┌─────────┐      ┌──────────────────┐                 ┌─────────────────┐                               │
-│  │   CAN   │─────→│ vdr_vssdag_probe │                 │  rt_dds_bridge  │                               │
+│  │   CAN   │─────→│  vep_can_probe   │                 │  rt_dds_bridge  │                               │
 │  │  vcan0  │      └────────┬─────────┘                 └────────┬────────┘                               │
 │  └─────────┘               │                                    ▲                                        │
 │                            │                                    │                                        │
 │                            │                                    │           ┌──────────────┐             │
-│                            │             ┌──────────────┐       │           │ vdr_otel     │             │
-│                            │             │ diagnostics  │       │           │ _bridge      │             │
+│                            │             ┌──────────────┐       │           │ vep_otel     │             │
+│                            │             │ diagnostics  │       │           │ _probe       │             │
 │                            │             │   probe      │       │           └──────┬───────┘             │
 │                            │             └──────┬───────┘       │                  │                     │
 │                            │                    │               │                  │                     │
@@ -26,7 +26,7 @@
 │                  │                                                       │                              │
 │                  ▼                                                       ▼                              │
 │         ┌──────────────┐                                        ┌──────────────────┐                    │
-│         │ vdr_exporter │                                        │ kuksa_dds_bridge │                    │
+│         │ vep_exporter │                                        │ kuksa_dds_bridge │                    │
 │         └──────┬───────┘                                        └────────┬─────────┘                    │
 │                ▼                                                         ▼                              │
 │         ┌──────────────┐                                        ┌──────────────────┐                    │
@@ -47,15 +47,15 @@
 
 ### Probes (Data Sources)
 
-**vdr_vssdag_probe**
+**vep_can_probe**
 - Reads CAN frames from vcan0 (or physical CAN interface)
 - Decodes using DBC files (e.g., Model3CAN.dbc)
 - Maps CAN signals to VSS paths using DAG-based transformations
 - Publishes to DDS topic `rt/vss/signals`
 
-**vdr_otel_bridge**
+**vep_otel_probe**
 - Receives OpenTelemetry data (traces, metrics, logs)
-- Converts to VDR telemetry format
+- Converts to VEP telemetry format
 - Publishes to DDS
 
 **diagnostics probes** 
@@ -87,7 +87,7 @@ Central message bus using CycloneDDS. All probes publish here, all consumers sub
 
 ### Cloud Offboard
 
-**vdr_exporter**
+**vep_exporter**
 - Subscribes to DDS topics
 - Compresses and batches telemetry
 - Publishes to MQTT for cloud offboarding
@@ -112,8 +112,8 @@ Central message bus using CycloneDDS. All probes publish here, all consumers sub
 
 ### Sensor Flow (e.g., Vehicle.Speed)
 ```
-CAN → vdr_vssdag_probe → DDS → kuksa_dds_bridge → KUKSA → Apps
-                          └──→ vdr_exporter → MQTT → Cloud
+CAN → vep_can_probe → DDS → kuksa_dds_bridge → KUKSA → Apps
+                       └──→ vep_exporter → MQTT → Cloud
 ```
 
 ### Actuator Flow (e.g., HVAC Temperature)

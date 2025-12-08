@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "exporter/subscriber.hpp"
+#include "subscriber.hpp"
 #include "common/qos_profiles.hpp"
 
 #include <glog/logging.h>
@@ -29,7 +29,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.vss_signals) {
         auto qos = dds::qos_profiles::reliable_standard(100);
         topic_vss_signal_ = std::make_unique<dds::Topic>(
-            participant_, &vss_Signal_desc,
+            participant_, &vep_VssSignal_desc,
             "rt/vss/signals", qos.get());
         reader_vss_signal_ = std::make_unique<dds::Reader>(
             participant_, *topic_vss_signal_, qos.get());
@@ -38,7 +38,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.events) {
         auto qos = dds::qos_profiles::reliable_critical();
         topic_event_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_events_Event_desc,
+            participant_, &vep_Event_desc,
             "rt/events/vehicle", qos.get());
         reader_event_ = std::make_unique<dds::Reader>(
             participant_, *topic_event_, qos.get());
@@ -47,7 +47,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.gauges) {
         auto qos = dds::qos_profiles::best_effort(1);
         topic_gauge_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_metrics_Gauge_desc,
+            participant_, &vep_OtelGauge_desc,
             "rt/telemetry/gauges", qos.get());
         reader_gauge_ = std::make_unique<dds::Reader>(
             participant_, *topic_gauge_, qos.get());
@@ -56,7 +56,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.counters) {
         auto qos = dds::qos_profiles::best_effort(1);
         topic_counter_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_metrics_Counter_desc,
+            participant_, &vep_OtelCounter_desc,
             "rt/telemetry/counters", qos.get());
         reader_counter_ = std::make_unique<dds::Reader>(
             participant_, *topic_counter_, qos.get());
@@ -65,7 +65,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.histograms) {
         auto qos = dds::qos_profiles::best_effort(1);
         topic_histogram_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_metrics_Histogram_desc,
+            participant_, &vep_OtelHistogram_desc,
             "rt/telemetry/histograms", qos.get());
         reader_histogram_ = std::make_unique<dds::Reader>(
             participant_, *topic_histogram_, qos.get());
@@ -74,7 +74,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.logs) {
         auto qos = dds::qos_profiles::best_effort(100);
         topic_log_entry_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_logs_LogEntry_desc,
+            participant_, &vep_OtelLogEntry_desc,
             "rt/logs/entries", qos.get());
         reader_log_entry_ = std::make_unique<dds::Reader>(
             participant_, *topic_log_entry_, qos.get());
@@ -83,7 +83,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.scalar_measurements) {
         auto qos = dds::qos_profiles::reliable_standard(10);
         topic_scalar_measurement_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_diagnostics_ScalarMeasurement_desc,
+            participant_, &vep_ScalarMeasurement_desc,
             "rt/diagnostics/scalar", qos.get());
         reader_scalar_measurement_ = std::make_unique<dds::Reader>(
             participant_, *topic_scalar_measurement_, qos.get());
@@ -92,7 +92,7 @@ SubscriptionManager::SubscriptionManager(dds::Participant& participant,
     if (config_.vector_measurements) {
         auto qos = dds::qos_profiles::reliable_standard(10);
         topic_vector_measurement_ = std::make_unique<dds::Topic>(
-            participant_, &telemetry_diagnostics_VectorMeasurement_desc,
+            participant_, &vep_VectorMeasurement_desc,
             "rt/diagnostics/vector", qos.get());
         reader_vector_measurement_ = std::make_unique<dds::Reader>(
             participant_, *topic_vector_measurement_, qos.get());
@@ -164,36 +164,36 @@ void SubscriptionManager::poll_loop() {
     while (running_) {
         // Poll each reader
         if (reader_vss_signal_ && cb_vss_signal_) {
-            process_reader<vss_Signal>(*reader_vss_signal_, cb_vss_signal_);
+            process_reader<vep_VssSignal>(*reader_vss_signal_, cb_vss_signal_);
         }
 
         if (reader_event_ && cb_event_) {
-            process_reader<telemetry_events_Event>(*reader_event_, cb_event_);
+            process_reader<vep_Event>(*reader_event_, cb_event_);
         }
 
         if (reader_gauge_ && cb_gauge_) {
-            process_reader<telemetry_metrics_Gauge>(*reader_gauge_, cb_gauge_);
+            process_reader<vep_OtelGauge>(*reader_gauge_, cb_gauge_);
         }
 
         if (reader_counter_ && cb_counter_) {
-            process_reader<telemetry_metrics_Counter>(*reader_counter_, cb_counter_);
+            process_reader<vep_OtelCounter>(*reader_counter_, cb_counter_);
         }
 
         if (reader_histogram_ && cb_histogram_) {
-            process_reader<telemetry_metrics_Histogram>(*reader_histogram_, cb_histogram_);
+            process_reader<vep_OtelHistogram>(*reader_histogram_, cb_histogram_);
         }
 
         if (reader_log_entry_ && cb_log_entry_) {
-            process_reader<telemetry_logs_LogEntry>(*reader_log_entry_, cb_log_entry_);
+            process_reader<vep_OtelLogEntry>(*reader_log_entry_, cb_log_entry_);
         }
 
         if (reader_scalar_measurement_ && cb_scalar_measurement_) {
-            process_reader<telemetry_diagnostics_ScalarMeasurement>(
+            process_reader<vep_ScalarMeasurement>(
                 *reader_scalar_measurement_, cb_scalar_measurement_);
         }
 
         if (reader_vector_measurement_ && cb_vector_measurement_) {
-            process_reader<telemetry_diagnostics_VectorMeasurement>(
+            process_reader<vep_VectorMeasurement>(
                 *reader_vector_measurement_, cb_vector_measurement_);
         }
 

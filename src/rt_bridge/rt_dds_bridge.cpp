@@ -18,44 +18,44 @@ int64_t now_ns() {
 }
 
 // Convert ActuatorValue to DDS signal value type and set fields
-void actuator_value_to_dds(const bridge::ActuatorValue& value, vss_Signal& signal) {
+void actuator_value_to_dds(const bridge::ActuatorValue& value, vep_VssSignal& signal) {
     std::visit([&signal](auto&& v) {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, bool>) {
-            signal.value.type = vss_types_VALUE_TYPE_BOOL;
+            signal.value.type = vep_VSS_VALUE_TYPE_BOOL;
             signal.value.bool_value = v;
         } else if constexpr (std::is_same_v<T, int8_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_INT8;
+            signal.value.type = vep_VSS_VALUE_TYPE_INT8;
             signal.value.int8_value = static_cast<uint8_t>(v);
         } else if constexpr (std::is_same_v<T, int16_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_INT16;
+            signal.value.type = vep_VSS_VALUE_TYPE_INT16;
             signal.value.int16_value = v;
         } else if constexpr (std::is_same_v<T, int32_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_INT32;
+            signal.value.type = vep_VSS_VALUE_TYPE_INT32;
             signal.value.int32_value = v;
         } else if constexpr (std::is_same_v<T, int64_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_INT64;
+            signal.value.type = vep_VSS_VALUE_TYPE_INT64;
             signal.value.int64_value = v;
         } else if constexpr (std::is_same_v<T, uint8_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_UINT8;
+            signal.value.type = vep_VSS_VALUE_TYPE_UINT8;
             signal.value.uint8_value = v;
         } else if constexpr (std::is_same_v<T, uint16_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_UINT16;
+            signal.value.type = vep_VSS_VALUE_TYPE_UINT16;
             signal.value.uint16_value = v;
         } else if constexpr (std::is_same_v<T, uint32_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_UINT32;
+            signal.value.type = vep_VSS_VALUE_TYPE_UINT32;
             signal.value.uint32_value = v;
         } else if constexpr (std::is_same_v<T, uint64_t>) {
-            signal.value.type = vss_types_VALUE_TYPE_UINT64;
+            signal.value.type = vep_VSS_VALUE_TYPE_UINT64;
             signal.value.uint64_value = v;
         } else if constexpr (std::is_same_v<T, float>) {
-            signal.value.type = vss_types_VALUE_TYPE_FLOAT;
+            signal.value.type = vep_VSS_VALUE_TYPE_FLOAT;
             signal.value.float_value = v;
         } else if constexpr (std::is_same_v<T, double>) {
-            signal.value.type = vss_types_VALUE_TYPE_DOUBLE;
+            signal.value.type = vep_VSS_VALUE_TYPE_DOUBLE;
             signal.value.double_value = v;
         } else if constexpr (std::is_same_v<T, std::string>) {
-            signal.value.type = vss_types_VALUE_TYPE_STRING;
+            signal.value.type = vep_VSS_VALUE_TYPE_STRING;
             // Note: string_value must be set by caller with proper lifetime
         }
     }, value);
@@ -106,7 +106,7 @@ bool RtDdsBridge::initialize() {
         // Actuator target topic (subscribe - receive from kuksa_dds_bridge)
         dds_target_topic_ = std::make_unique<dds::Topic>(
             *dds_participant_,
-            &vss_Signal_desc,
+            &vep_VssSignal_desc,
             config_.dds_actuator_target_topic
         );
         dds_target_reader_ = std::make_unique<dds::Reader>(
@@ -117,7 +117,7 @@ bool RtDdsBridge::initialize() {
         // Actuator actual topic (publish - send to kuksa_dds_bridge)
         dds_actual_topic_ = std::make_unique<dds::Topic>(
             *dds_participant_,
-            &vss_Signal_desc,
+            &vep_VssSignal_desc,
             config_.dds_actuator_actual_topic
         );
         dds_actual_writer_ = std::make_unique<dds::Writer>(
@@ -186,8 +186,8 @@ void RtDdsBridge::dds_poll_loop() {
     while (running_) {
         // Poll actuator targets from DDS
         try {
-            dds_target_reader_->take_each<vss_Signal>(
-                [this](const vss_Signal& signal) {
+            dds_target_reader_->take_each<vep_VssSignal>(
+                [this](const vep_VssSignal& signal) {
                     on_dds_actuator_target(signal);
                 },
                 100  // max samples per poll
@@ -203,7 +203,7 @@ void RtDdsBridge::dds_poll_loop() {
     LOG(INFO) << "DDS poll loop stopped";
 }
 
-void RtDdsBridge::on_dds_actuator_target(const vss_Signal& signal) {
+void RtDdsBridge::on_dds_actuator_target(const vep_VssSignal& signal) {
     std::string path = signal.path ? signal.path : "";
     if (path.empty()) {
         LOG(WARNING) << "Received DDS actuator target with empty path";
@@ -227,31 +227,31 @@ void RtDdsBridge::on_dds_actuator_target(const vss_Signal& signal) {
     }
 }
 
-bridge::ActuatorValue RtDdsBridge::dds_to_actuator_value(const vss_Signal& signal) {
+bridge::ActuatorValue RtDdsBridge::dds_to_actuator_value(const vep_VssSignal& signal) {
     switch (signal.value.type) {
-        case vss_types_VALUE_TYPE_BOOL:
+        case vep_VSS_VALUE_TYPE_BOOL:
             return bridge::ActuatorValue{signal.value.bool_value};
-        case vss_types_VALUE_TYPE_INT8:
+        case vep_VSS_VALUE_TYPE_INT8:
             return bridge::ActuatorValue{static_cast<int8_t>(signal.value.int8_value)};
-        case vss_types_VALUE_TYPE_INT16:
+        case vep_VSS_VALUE_TYPE_INT16:
             return bridge::ActuatorValue{signal.value.int16_value};
-        case vss_types_VALUE_TYPE_INT32:
+        case vep_VSS_VALUE_TYPE_INT32:
             return bridge::ActuatorValue{signal.value.int32_value};
-        case vss_types_VALUE_TYPE_INT64:
+        case vep_VSS_VALUE_TYPE_INT64:
             return bridge::ActuatorValue{signal.value.int64_value};
-        case vss_types_VALUE_TYPE_UINT8:
+        case vep_VSS_VALUE_TYPE_UINT8:
             return bridge::ActuatorValue{signal.value.uint8_value};
-        case vss_types_VALUE_TYPE_UINT16:
+        case vep_VSS_VALUE_TYPE_UINT16:
             return bridge::ActuatorValue{signal.value.uint16_value};
-        case vss_types_VALUE_TYPE_UINT32:
+        case vep_VSS_VALUE_TYPE_UINT32:
             return bridge::ActuatorValue{signal.value.uint32_value};
-        case vss_types_VALUE_TYPE_UINT64:
+        case vep_VSS_VALUE_TYPE_UINT64:
             return bridge::ActuatorValue{signal.value.uint64_value};
-        case vss_types_VALUE_TYPE_FLOAT:
+        case vep_VSS_VALUE_TYPE_FLOAT:
             return bridge::ActuatorValue{signal.value.float_value};
-        case vss_types_VALUE_TYPE_DOUBLE:
+        case vep_VSS_VALUE_TYPE_DOUBLE:
             return bridge::ActuatorValue{signal.value.double_value};
-        case vss_types_VALUE_TYPE_STRING:
+        case vep_VSS_VALUE_TYPE_STRING:
             return bridge::ActuatorValue{std::string(signal.value.string_value ? signal.value.string_value : "")};
         default:
             LOG(WARNING) << "Unknown value type: " << signal.value.type;
@@ -272,7 +272,7 @@ void RtDdsBridge::on_rt_actual(const std::string& path, const bridge::ActuatorVa
 
 void RtDdsBridge::publish_actual_to_dds(const std::string& path, const bridge::ActuatorValue& value) {
     // Prepare DDS message
-    vss_Signal msg = {};
+    vep_VssSignal msg = {};
 
     // Keep strings alive for write
     std::string source_id = "rt_dds_bridge";
@@ -283,7 +283,7 @@ void RtDdsBridge::publish_actual_to_dds(const std::string& path, const bridge::A
     msg.header.timestamp_ns = now_ns();
     msg.header.seq_num = 0;
     msg.header.correlation_id = const_cast<char*>(correlation_id.c_str());
-    msg.quality = vss_types_QUALITY_VALID;
+    msg.quality = vep_VSS_QUALITY_VALID;
 
     // Convert value
     actuator_value_to_dds(value, msg);

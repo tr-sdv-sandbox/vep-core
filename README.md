@@ -24,7 +24,7 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 │                                                  │                         │
 │                                                  ▼                         │
 │                              ┌─────────────────────────────────────────┐   │
-│                              │            vdr_exporter                 │   │
+│                              │            vep_exporter                 │   │
 │                              │                                         │   │
 │                              │  SubscriptionManager (from vdr-light)   │   │
 │                              │              +                          │   │
@@ -43,7 +43,7 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 │             │                                                               │
 │             ▼                                                               │
 │  ┌─────────────────────┐     Decompress → Decode Protobuf → JSON/Storage   │
-│  │  cloud_backend_sim  │                                                    │
+│  │ vep_mqtt_receiver   │                                                    │
 │  └─────────────────────┘                                                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -61,7 +61,7 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 
 ### Applications
 
-**vdr_exporter** - Exports telemetry to cloud:
+**vep_exporter** - Exports telemetry to cloud:
 - Subscribes to DDS topics using vdr-light's SubscriptionManager
 - Batches signals for efficiency
 - Encodes to lean protobuf format
@@ -70,7 +70,7 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 
 ### Tools
 
-**cloud_backend_sim** - Simulates cloud backend:
+**vep_mqtt_receiver** - MQTT receiver for testing:
 - Subscribes to MQTT topics
 - Decompresses with zstd
 - Decodes protobuf
@@ -109,16 +109,16 @@ cmake --build build -j$(nproc)
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
-### 2. Start Cloud Backend Simulator
+### 2. Start MQTT Receiver
 
 ```bash
-./build/cloud_backend_sim --verbose
+./build/vep_mqtt_receiver --verbose
 ```
 
 ### 3. Start VDR Exporter
 
 ```bash
-./build/vdr_exporter
+./build/vep_exporter
 ```
 
 ### 4. Start CAN Simulator
@@ -131,19 +131,19 @@ You should see signals flowing:
 1. CAN simulator generates vehicle data
 2. libvssdag transforms CAN→VSS
 3. DDS publishes to domain
-4. vdr_exporter batches, compresses, sends to MQTT
-5. cloud_backend_sim receives, decompresses, displays
+4. vep_exporter batches, compresses, sends to MQTT
+5. vep_mqtt_receiver receives, decompresses, displays
 
 ## Configuration
 
-### vdr_exporter
+### vep_exporter
 
 ```yaml
 # config/exporter.yaml
 mqtt:
   broker: localhost
   port: 1883
-  client_id: vdr_exporter
+  client_id: vep_exporter
   topic_prefix: v1/telemetry
 
 batching:

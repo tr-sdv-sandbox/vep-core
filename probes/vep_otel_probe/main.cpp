@@ -25,8 +25,9 @@
 #include "common/dds_wrapper.hpp"
 #include "common/qos_profiles.hpp"
 #include "common/time_utils.hpp"
-#include "vss_types.h"
-#include "otel_telemetry.h"
+#include "types.h"
+#include "otel-metrics.h"
+#include "otel-logs.h"
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -73,17 +74,17 @@ std::string get_string_value(const otel_common::AnyValue& value) {
 }
 
 // Convert OTel severity to our log level
-otel_telemetry_LogLevel convert_severity(otel_logs::SeverityNumber severity) {
+vep_OtelLogLevel convert_severity(otel_logs::SeverityNumber severity) {
     if (severity <= otel_logs::SEVERITY_NUMBER_DEBUG4) {
-        return otel_telemetry_LOG_LEVEL_DEBUG;
+        return vep_LOG_LEVEL_DEBUG;
     } else if (severity <= otel_logs::SEVERITY_NUMBER_INFO4) {
-        return otel_telemetry_LOG_LEVEL_INFO;
+        return vep_LOG_LEVEL_INFO;
     } else if (severity <= otel_logs::SEVERITY_NUMBER_WARN4) {
-        return otel_telemetry_LOG_LEVEL_WARN;
+        return vep_LOG_LEVEL_WARN;
     } else if (severity <= otel_logs::SEVERITY_NUMBER_ERROR4) {
-        return otel_telemetry_LOG_LEVEL_ERROR;
+        return vep_LOG_LEVEL_ERROR;
     }
-    return otel_telemetry_LOG_LEVEL_ERROR;  // Map FATAL to ERROR (our max level)
+    return vep_LOG_LEVEL_ERROR;  // Map FATAL to ERROR (our max level)
 }
 
 }  // namespace
@@ -167,7 +168,7 @@ private:
     void publish_gauge(const std::string& name,
                        const otel_metrics::NumberDataPoint& dp,
                        const std::string& source_id) {
-        otel_telemetry_Gauge msg = {};
+        vep_OtelGauge msg = {};
 
         // Store strings to keep them alive
         name_buf_ = name;
@@ -191,7 +192,7 @@ private:
         }
 
         for (size_t i = 0; i < label_keys_.size() && i < 16; ++i) {
-            vss_types_KeyValue kv = {};
+            vep_KeyValue kv = {};
             kv.key = const_cast<char*>(label_keys_[i].c_str());
             kv.value = const_cast<char*>(label_values_[i].c_str());
             labels_.push_back(kv);
@@ -211,7 +212,7 @@ private:
     void publish_counter(const std::string& name,
                          const otel_metrics::NumberDataPoint& dp,
                          const std::string& source_id) {
-        otel_telemetry_Counter msg = {};
+        vep_OtelCounter msg = {};
 
         name_buf_ = name;
         source_buf_ = source_id;
@@ -234,7 +235,7 @@ private:
         }
 
         for (size_t i = 0; i < label_keys_.size() && i < 16; ++i) {
-            vss_types_KeyValue kv = {};
+            vep_KeyValue kv = {};
             kv.key = const_cast<char*>(label_keys_[i].c_str());
             kv.value = const_cast<char*>(label_values_[i].c_str());
             labels_.push_back(kv);
@@ -254,7 +255,7 @@ private:
     void publish_histogram(const std::string& name,
                            const otel_metrics::HistogramDataPoint& dp,
                            const std::string& source_id) {
-        otel_telemetry_Histogram msg = {};
+        vep_OtelHistogram msg = {};
 
         name_buf_ = name;
         source_buf_ = source_id;
@@ -277,7 +278,7 @@ private:
         }
 
         for (size_t i = 0; i < label_keys_.size() && i < 16; ++i) {
-            vss_types_KeyValue kv = {};
+            vep_KeyValue kv = {};
             kv.key = const_cast<char*>(label_keys_[i].c_str());
             kv.value = const_cast<char*>(label_values_[i].c_str());
             labels_.push_back(kv);
@@ -298,7 +299,7 @@ private:
         int num_counts = dp.bucket_counts_size();
 
         for (int i = 0; i < num_counts && i < 32; ++i) {
-            otel_telemetry_HistogramBucket bucket = {};
+            vep_OtelHistogramBucket bucket = {};
             bucket.cumulative_count = dp.bucket_counts(i);
             bucket.upper_bound = (i < num_bounds) ? dp.explicit_bounds(i)
                                                    : std::numeric_limits<double>::infinity();
@@ -327,8 +328,8 @@ private:
     std::string correlation_buf_;
     std::vector<std::string> label_keys_;
     std::vector<std::string> label_values_;
-    std::vector<vss_types_KeyValue> labels_;
-    std::vector<otel_telemetry_HistogramBucket> buckets_;
+    std::vector<vep_KeyValue> labels_;
+    std::vector<vep_OtelHistogramBucket> buckets_;
 };
 
 /*
@@ -387,7 +388,7 @@ private:
     void publish_log(const otel_logs::LogRecord& log,
                      const std::string& source_id,
                      const std::string& component) {
-        otel_telemetry_LogEntry msg = {};
+        vep_OtelLogEntry msg = {};
 
         source_buf_ = source_id;
         correlation_buf_ = "";
@@ -420,7 +421,7 @@ private:
         }
 
         for (size_t i = 0; i < field_keys_.size() && i < 16; ++i) {
-            vss_types_KeyValue kv = {};
+            vep_KeyValue kv = {};
             kv.key = const_cast<char*>(field_keys_[i].c_str());
             kv.value = const_cast<char*>(field_values_[i].c_str());
             attrs_.push_back(kv);
@@ -446,7 +447,7 @@ private:
     std::string message_buf_;
     std::vector<std::string> field_keys_;
     std::vector<std::string> field_values_;
-    std::vector<vss_types_KeyValue> attrs_;
+    std::vector<vep_KeyValue> attrs_;
 };
 
 int main(int argc, char* argv[]) {
@@ -475,13 +476,13 @@ int main(int argc, char* argv[]) {
         auto qos_metrics = dds::qos_profiles::best_effort(1);
         auto qos_logs = dds::qos_profiles::best_effort(100);
 
-        dds::Topic topic_gauge(participant, &otel_telemetry_Gauge_desc,
+        dds::Topic topic_gauge(participant, &vep_OtelGauge_desc,
                                "rt/telemetry/gauges", qos_metrics.get());
-        dds::Topic topic_counter(participant, &otel_telemetry_Counter_desc,
+        dds::Topic topic_counter(participant, &vep_OtelCounter_desc,
                                  "rt/telemetry/counters", qos_metrics.get());
-        dds::Topic topic_histogram(participant, &otel_telemetry_Histogram_desc,
+        dds::Topic topic_histogram(participant, &vep_OtelHistogram_desc,
                                    "rt/telemetry/histograms", qos_metrics.get());
-        dds::Topic topic_logs(participant, &otel_telemetry_LogEntry_desc,
+        dds::Topic topic_logs(participant, &vep_OtelLogEntry_desc,
                               "rt/logs/entries", qos_logs.get());
 
         dds::Writer writer_gauge(participant, topic_gauge, qos_metrics.get());
