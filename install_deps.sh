@@ -41,11 +41,9 @@ $SUDO apt-get install -y \
     libddsc0t64
 
 echo ""
-echo "Installing Mosquitto MQTT..."
+echo "Installing Mosquitto MQTT client library..."
 $SUDO apt-get install -y \
-    libmosquitto-dev \
-    mosquitto \
-    mosquitto-clients
+    libmosquitto-dev
 
 echo ""
 echo "Installing Google logging (glog)..."
@@ -111,6 +109,6 @@ echo ""
 echo "4. Run tests to verify:"
 echo "   cd build && ctest"
 echo ""
-echo "5. Start Mosquitto broker:"
-echo "   docker-compose -f docker/docker-compose.yml up -d"
+echo "5. Run the framework (starts Mosquitto + KUKSA via Docker):"
+echo "   ./run_framework.sh"
 echo ""

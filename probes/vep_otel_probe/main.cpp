@@ -109,13 +109,21 @@ public:
         int64_t rejected = 0;
 
         for (const auto& rm : request->resource_metrics()) {
-            // Extract resource attributes (e.g., service.name)
-            std::string source_id = "otel_bridge";
+            // Extract resource attributes (service.name, host.name)
+            std::string service_name = "otel_bridge";
+            std::string host_name;
             for (const auto& attr : rm.resource().attributes()) {
                 if (attr.key() == "service.name") {
-                    source_id = get_string_value(attr.value());
-                    break;
+                    service_name = get_string_value(attr.value());
+                } else if (attr.key() == "host.name") {
+                    host_name = get_string_value(attr.value());
                 }
+            }
+
+            // Build source_id: "service@host" or just "service" if no host
+            std::string source_id = service_name;
+            if (!host_name.empty()) {
+                source_id += "@" + host_name;
             }
 
             for (const auto& sm : rm.scope_metrics()) {
@@ -348,13 +356,21 @@ public:
         int64_t rejected = 0;
 
         for (const auto& rl : request->resource_logs()) {
-            // Extract resource attributes
-            std::string source_id = "otel_bridge";
+            // Extract resource attributes (service.name, host.name)
+            std::string service_name = "otel_bridge";
+            std::string host_name;
             for (const auto& attr : rl.resource().attributes()) {
                 if (attr.key() == "service.name") {
-                    source_id = get_string_value(attr.value());
-                    break;
+                    service_name = get_string_value(attr.value());
+                } else if (attr.key() == "host.name") {
+                    host_name = get_string_value(attr.value());
                 }
+            }
+
+            // Build source_id: "service@host" or just "service" if no host
+            std::string source_id = service_name;
+            if (!host_name.empty()) {
+                source_id += "@" + host_name;
             }
 
             for (const auto& sl : rl.scope_logs()) {

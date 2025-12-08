@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// @file main.cpp
-/// @brief Cloud Backend Simulator - Receives and decodes compressed MQTT messages
+/// @brief VEP MQTT Receiver - Receives and decodes compressed MQTT messages
 ///
 /// This tool simulates a cloud backend receiving vehicle telemetry data.
 /// It subscribes to MQTT topics, decompresses with zstd, decodes protobuf,
 /// and displays the data in JSON format for debugging.
 ///
 /// Usage:
-///   cloud_backend_sim [--broker HOST] [--port PORT] [--topic PREFIX]
+///   vep_mqtt_receiver [--broker HOST] [--port PORT] [--topic PREFIX]
 
 #include "transfer.pb.h"
 
@@ -19,10 +19,12 @@
 #include <zstd.h>
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using json = nlohmann::json;
@@ -194,7 +196,7 @@ void signal_handler(int sig) {
 void print_usage(const char* prog) {
     std::cout << "Usage: " << prog << " [OPTIONS]\n"
               << "\n"
-              << "Cloud Backend Simulator - Receives and decodes vehicle telemetry\n"
+              << "VEP MQTT Receiver - Receives and decodes vehicle telemetry\n"
               << "\n"
               << "Options:\n"
               << "  --broker HOST     MQTT broker host (default: localhost)\n"
@@ -408,27 +410,102 @@ void process_metrics_batch(const std::vector<uint8_t>& data) {
                 jm["sample_count"] = m.histogram().sample_count();
                 jm["sample_sum"] = m.histogram().sample_sum();
             }
+            // Add labels
+            if (m.label_keys_size() > 0) {
+                json labels = json::object();
+                for (int i = 0; i < m.label_keys_size() && i < m.label_values_size(); ++i) {
+                    labels[m.label_keys(i)] = m.label_values(i);
+                }
+                jm["labels"] = labels;
+            }
             j["metrics"].push_back(jm);
         }
 
         std::cout << j.dump(2) << "\n";
     } else {
-        std::cout << "\n=== Metrics Batch ===\n";
+        std::cout << "\n=== Metrics Batch [" << batch.source_id() << "] ===\n";
+        if (g_config.verbose) {
+            std::cout << "Seq: " << batch.sequence() << "\n";
+        }
+
+        for (const auto& m : batch.metrics()) {
+            // Build labels string
+            std::string labels;
+            if (m.label_keys_size() > 0) {
+                labels = "{";
+                for (int i = 0; i < m.label_keys_size() && i < m.label_values_size(); ++i) {
+                    if (i > 0) labels += ",";
+                    labels += m.label_keys(i) + "=" + m.label_values(i);
+                }
+                labels += "}";
+            }
+
+            if (m.has_gauge()) {
+                std::cout << "  [GAUGE] " << m.name() << labels << " = " << m.gauge() << "\n";
+            } else if (m.has_counter()) {
+                std::cout << "  [COUNTER] " << m.name() << labels << " = " << m.counter() << "\n";
+            } else if (m.has_histogram()) {
+                std::cout << "  [HISTOGRAM] " << m.name() << labels
+                          << " count=" << m.histogram().sample_count()
+                          << " sum=" << m.histogram().sample_sum() << "\n";
+            }
+        }
+    }
+}
+
+std::string log_level_to_string(vep::transfer::LogLevel level) {
+    switch (level) {
+        case vep::transfer::LOG_LEVEL_DEBUG: return "DEBUG";
+        case vep::transfer::LOG_LEVEL_INFO: return "INFO";
+        case vep::transfer::LOG_LEVEL_WARN: return "WARN";
+        case vep::transfer::LOG_LEVEL_ERROR: return "ERROR";
+        default: return "UNKNOWN";
+    }
+}
+
+void process_log_batch(const std::vector<uint8_t>& data) {
+    vep::transfer::LogBatch batch;
+    if (!batch.ParseFromArray(data.data(), data.size())) {
+        LOG(ERROR) << "Failed to parse LogBatch";
+        return;
+    }
+
+    if (g_config.json_output) {
+        json j;
+        j["type"] = "log_batch";
+        j["source_id"] = batch.source_id();
+        j["sequence"] = batch.sequence();
+        j["logs"] = json::array();
+
+        for (const auto& log : batch.logs()) {
+            json jl;
+            jl["timestamp_ms"] = batch.base_timestamp_ms() + log.timestamp_delta_ms();
+            jl["level"] = log_level_to_string(log.level());
+            jl["component"] = log.component();
+            jl["message"] = log.message();
+
+            if (log.attr_keys_size() > 0) {
+                json attrs = json::object();
+                for (int i = 0; i < log.attr_keys_size() && i < log.attr_values_size(); ++i) {
+                    attrs[log.attr_keys(i)] = log.attr_values(i);
+                }
+                jl["attributes"] = attrs;
+            }
+            j["logs"].push_back(jl);
+        }
+
+        std::cout << j.dump(2) << "\n";
+    } else {
+        std::cout << "\n=== Log Batch ===\n";
         if (g_config.verbose) {
             std::cout << "Source: " << batch.source_id()
                       << " | Seq: " << batch.sequence() << "\n";
         }
 
-        for (const auto& m : batch.metrics()) {
-            if (m.has_gauge()) {
-                std::cout << "  [GAUGE] " << m.name() << " = " << m.gauge() << "\n";
-            } else if (m.has_counter()) {
-                std::cout << "  [COUNTER] " << m.name() << " = " << m.counter() << "\n";
-            } else if (m.has_histogram()) {
-                std::cout << "  [HISTOGRAM] " << m.name()
-                          << " count=" << m.histogram().sample_count()
-                          << " sum=" << m.histogram().sample_sum() << "\n";
-            }
+        for (const auto& log : batch.logs()) {
+            uint64_t ts = batch.base_timestamp_ms() + log.timestamp_delta_ms();
+            std::cout << "  [" << ts << "] [" << log_level_to_string(log.level()) << "] "
+                      << log.component() << ": " << log.message() << "\n";
         }
     }
 }
@@ -457,6 +534,8 @@ void on_message(struct mosquitto* /*mosq*/, void* /*obj*/,
         process_event_batch(decompressed);
     } else if (topic.find("/metrics") != std::string::npos) {
         process_metrics_batch(decompressed);
+    } else if (topic.find("/logs") != std::string::npos) {
+        process_log_batch(decompressed);
     } else {
         LOG(WARNING) << "Unknown topic type: " << topic;
     }
@@ -513,7 +592,7 @@ int main(int argc, char* argv[]) {
     FLAGS_logtostderr = true;
     FLAGS_colorlogtostderr = true;
 
-    LOG(INFO) << "Cloud Backend Simulator starting...";
+    LOG(INFO) << "VEP MQTT Receiver starting...";
 
     // Parse configuration
     g_config = parse_args(argc, argv);
@@ -527,7 +606,7 @@ int main(int argc, char* argv[]) {
     // Initialize Mosquitto
     mosquitto_lib_init();
 
-    struct mosquitto* mosq = mosquitto_new("cloud_backend_sim", true, nullptr);
+    struct mosquitto* mosq = mosquitto_new("vep_mqtt_receiver", true, nullptr);
     if (!mosq) {
         LOG(ERROR) << "Failed to create Mosquitto client";
         return 1;
@@ -538,24 +617,41 @@ int main(int argc, char* argv[]) {
     mosquitto_disconnect_callback_set(mosq, on_disconnect);
     mosquitto_message_callback_set(mosq, on_message);
 
-    // Connect
-    int rc = mosquitto_connect(mosq, g_config.broker_host.c_str(), g_config.broker_port, 60);
-    if (rc != MOSQ_ERR_SUCCESS) {
-        LOG(ERROR) << "Connect failed: " << mosquitto_strerror(rc);
-        mosquitto_destroy(mosq);
-        mosquitto_lib_cleanup();
-        return 1;
+    // Connect with retry
+    LOG(INFO) << "Connecting to broker...";
+    int rc;
+    while (g_running) {
+        rc = mosquitto_connect(mosq, g_config.broker_host.c_str(), g_config.broker_port, 60);
+        if (rc == MOSQ_ERR_SUCCESS) {
+            break;
+        }
+        LOG(INFO) << "Waiting for broker at " << g_config.broker_host << ":" << g_config.broker_port << "...";
+        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 
-    LOG(INFO) << "Cloud Backend Simulator running. Press Ctrl+C to stop.";
+    if (!g_running) {
+        mosquitto_destroy(mosq);
+        mosquitto_lib_cleanup();
+        return 0;
+    }
+
+    LOG(INFO) << "VEP MQTT Receiver running. Press Ctrl+C to stop.";
 
     // Event loop
+    bool was_connected = true;
     while (g_running) {
         rc = mosquitto_loop(mosq, 100, 1);
         if (rc != MOSQ_ERR_SUCCESS) {
-            LOG(WARNING) << "Loop error: " << mosquitto_strerror(rc);
-            // Try to reconnect
-            mosquitto_reconnect(mosq);
+            if (was_connected) {
+                LOG(WARNING) << "Connection lost: " << mosquitto_strerror(rc);
+                was_connected = false;
+            }
+            // Try to reconnect with backoff
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (mosquitto_reconnect(mosq) == MOSQ_ERR_SUCCESS) {
+                LOG(INFO) << "Reconnected to broker";
+                was_connected = true;
+            }
         }
     }
 
@@ -569,6 +665,6 @@ int main(int argc, char* argv[]) {
         ZSTD_freeDCtx(g_zstd_dctx);
     }
 
-    LOG(INFO) << "Cloud Backend Simulator stopped.";
+    LOG(INFO) << "VEP MQTT Receiver stopped.";
     return 0;
 }

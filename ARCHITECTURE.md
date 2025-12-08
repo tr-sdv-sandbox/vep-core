@@ -54,9 +54,17 @@
 - Publishes to DDS topic `rt/vss/signals`
 
 **vep_otel_probe**
-- Receives OpenTelemetry data (traces, metrics, logs)
-- Converts to VEP telemetry format
-- Publishes to DDS
+- Receives OpenTelemetry metrics and logs via OTLP gRPC (port 4317)
+- Extracts resource attributes (service.name, host.name) for source identification
+- Source ID format: `service@host` (e.g., `vep_host_metrics@ecu-main`)
+- Converts to DDS messages (gauges, counters, histograms, logs)
+- Publishes to DDS topics: `rt/telemetry/gauges`, `rt/telemetry/counters`, etc.
+
+**vep_host_metrics**
+- Collects Linux system metrics (CPU, memory, disk I/O, network, filesystem)
+- Follows OpenTelemetry semantic conventions for system metrics
+- Exports via OTLP gRPC to vep_otel_probe
+- Includes host.name resource attribute for multi-ECU identification
 
 **diagnostics probes** 
 - UDS diagnostic data
@@ -123,12 +131,21 @@ App → KUKSA set() → kuksa_dds_bridge → DDS target → rt_dds_bridge → RT
                     KUKSA ← kuksa_dds_bridge ← DDS actual ←┘
 ```
 
+### Host Metrics Flow (OpenTelemetry)
+```
+vep_host_metrics → OTLP gRPC :4317 → vep_otel_probe → DDS → vep_exporter → MQTT → Cloud
+                                           │
+                                    source_id: "service@host"
+                                    labels: {service=vep_host_metrics@ecu-main}
+```
+
 ## Ports
 
 | Service | Port | Protocol |
 |---------|------|----------|
 | KUKSA Databroker | 61234 | gRPC |
 | Mosquitto MQTT | 1883 | MQTT |
+| vep_otel_probe (OTLP) | 4317 | gRPC |
 | DDS | multicast | RTPS |
 
 ## Running the Framework

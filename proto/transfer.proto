@@ -201,6 +201,32 @@ message Histogram {
   repeated uint64 bucket_counts = 4;
 }
 
+// Log batch (structured logs)
+message LogBatch {
+  fixed64 base_timestamp_ms = 1;
+  string source_id = 2;
+  uint32 sequence = 3;
+  repeated LogEntry logs = 4;
+}
+
+message LogEntry {
+  uint32 timestamp_delta_ms = 1;
+  LogLevel level = 2;
+  string component = 3;
+  string message = 4;
+
+  // Structured attributes as parallel arrays
+  repeated string attr_keys = 10;
+  repeated string attr_values = 11;
+}
+
+enum LogLevel {
+  LOG_LEVEL_DEBUG = 0;
+  LOG_LEVEL_INFO = 1;
+  LOG_LEVEL_WARN = 2;
+  LOG_LEVEL_ERROR = 3;
+}
+
 // Path dictionary for interning (sent once, cached by receiver)
 message PathDictionary {
   uint32 version = 1;

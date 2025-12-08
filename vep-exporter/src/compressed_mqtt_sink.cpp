@@ -113,6 +113,7 @@ void CompressedMqttSink::flush() {
     flush_signals();
     flush_events();
     flush_metrics();
+    flush_logs();
 }
 
 void CompressedMqttSink::batch_loop() {
@@ -186,6 +187,12 @@ void CompressedMqttSink::send(const vep_OtelGauge& msg) {
     met.metric_type = 0;  // gauge
     met.value = msg.value;
 
+    // Add source_id as a label to identify the emitting service
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        met.label_keys.push_back("service");
+        met.label_values.push_back(msg.header.source_id);
+    }
+
     for (uint32_t i = 0; i < msg.labels._length; ++i) {
         if (msg.labels._buffer[i].key) {
             met.label_keys.push_back(msg.labels._buffer[i].key);
@@ -209,6 +216,12 @@ void CompressedMqttSink::send(const vep_OtelCounter& msg) {
     met.metric_type = 1;  // counter
     met.value = msg.value;
 
+    // Add source_id as a label to identify the emitting service
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        met.label_keys.push_back("service");
+        met.label_values.push_back(msg.header.source_id);
+    }
+
     for (uint32_t i = 0; i < msg.labels._length; ++i) {
         if (msg.labels._buffer[i].key) {
             met.label_keys.push_back(msg.labels._buffer[i].key);
@@ -224,13 +237,70 @@ void CompressedMqttSink::send(const vep_OtelCounter& msg) {
 }
 
 void CompressedMqttSink::send(const vep_OtelHistogram& msg) {
-    // TODO: Implement histogram batching
-    (void)msg;
+    if (!running_) return;
+
+    PendingMetric met;
+    met.name = msg.name ? msg.name : "";
+    met.timestamp_ms = msg.header.timestamp_ns / 1000000;
+    met.metric_type = 2;  // histogram
+    met.sample_count = msg.sample_count;
+    met.sample_sum = msg.sample_sum;
+
+    // Extract bucket bounds and counts
+    for (uint32_t i = 0; i < msg.buckets._length; ++i) {
+        met.bucket_bounds.push_back(msg.buckets._buffer[i].upper_bound);
+        met.bucket_counts.push_back(msg.buckets._buffer[i].cumulative_count);
+    }
+
+    // Add source_id as a label to identify the emitting service
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        met.label_keys.push_back("service");
+        met.label_values.push_back(msg.header.source_id);
+    }
+
+    // Extract labels
+    for (uint32_t i = 0; i < msg.labels._length; ++i) {
+        if (msg.labels._buffer[i].key) {
+            met.label_keys.push_back(msg.labels._buffer[i].key);
+            met.label_values.push_back(
+                msg.labels._buffer[i].value ? msg.labels._buffer[i].value : "");
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(metrics_mutex_);
+        pending_metrics_.push_back(std::move(met));
+    }
 }
 
 void CompressedMqttSink::send(const vep_OtelLogEntry& msg) {
-    // TODO: Implement log batching
-    (void)msg;
+    if (!running_) return;
+
+    PendingLog log;
+    log.timestamp_ms = msg.header.timestamp_ns / 1000000;
+    log.level = static_cast<int>(msg.level);
+    log.component = msg.component ? msg.component : "";
+    log.message = msg.message ? msg.message : "";
+
+    // Add source_id as an attribute to identify the emitting service
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        log.attr_keys.push_back("service");
+        log.attr_values.push_back(msg.header.source_id);
+    }
+
+    // Extract attributes
+    for (uint32_t i = 0; i < msg.attributes._length; ++i) {
+        if (msg.attributes._buffer[i].key) {
+            log.attr_keys.push_back(msg.attributes._buffer[i].key);
+            log.attr_values.push_back(
+                msg.attributes._buffer[i].value ? msg.attributes._buffer[i].value : "");
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(logs_mutex_);
+        pending_logs_.push_back(std::move(log));
+    }
 }
 
 void CompressedMqttSink::send(const vep_ScalarMeasurement& msg) {
@@ -365,6 +435,17 @@ void CompressedMqttSink::flush_metrics() {
             pb_met->set_gauge(met.value);
         } else if (met.metric_type == 1) {
             pb_met->set_counter(met.value);
+        } else if (met.metric_type == 2) {
+            // Histogram
+            auto* hist = pb_met->mutable_histogram();
+            hist->set_sample_count(met.sample_count);
+            hist->set_sample_sum(met.sample_sum);
+            for (const auto& bound : met.bucket_bounds) {
+                hist->add_bucket_bounds(bound);
+            }
+            for (const auto& count : met.bucket_counts) {
+                hist->add_bucket_counts(count);
+            }
         }
 
         for (const auto& key : met.label_keys) {
@@ -384,6 +465,54 @@ void CompressedMqttSink::flush_metrics() {
     {
         std::lock_guard<std::mutex> lock(stats_mutex_);
         stats_.messages_sent += metrics.size();
+        compression_stats_.bytes_before_compression += serialized.size();
+        compression_stats_.bytes_after_compression += compressed.size();
+        compression_stats_.batches_sent++;
+    }
+}
+
+void CompressedMqttSink::flush_logs() {
+    std::vector<PendingLog> logs;
+
+    {
+        std::lock_guard<std::mutex> lock(logs_mutex_);
+        if (pending_logs_.empty()) return;
+        logs = std::move(pending_logs_);
+        pending_logs_.clear();
+    }
+
+    int64_t base_ts = logs.empty() ? 0 : logs[0].timestamp_ms;
+
+    vep::transfer::LogBatch batch;
+    batch.set_base_timestamp_ms(base_ts);
+    batch.set_source_id(source_id_);
+    batch.set_sequence(log_seq_++);
+
+    for (const auto& log : logs) {
+        auto* pb_log = batch.add_logs();
+        pb_log->set_timestamp_delta_ms(
+            static_cast<uint32_t>(log.timestamp_ms - base_ts));
+        pb_log->set_level(static_cast<vep::transfer::LogLevel>(log.level));
+        pb_log->set_component(log.component);
+        pb_log->set_message(log.message);
+
+        for (const auto& key : log.attr_keys) {
+            pb_log->add_attr_keys(key);
+        }
+        for (const auto& val : log.attr_values) {
+            pb_log->add_attr_values(val);
+        }
+    }
+
+    std::string serialized;
+    batch.SerializeToString(&serialized);
+
+    auto compressed = compress(serialized);
+    mqtt_publish("logs", compressed);
+
+    {
+        std::lock_guard<std::mutex> lock(stats_mutex_);
+        stats_.messages_sent += logs.size();
         compression_stats_.bytes_before_compression += serialized.size();
         compression_stats_.bytes_after_compression += compressed.size();
         compression_stats_.batches_sent++;

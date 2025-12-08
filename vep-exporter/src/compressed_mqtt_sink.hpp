@@ -123,12 +123,27 @@ private:
         double value;
         std::vector<std::string> label_keys;
         std::vector<std::string> label_values;
+        // For histograms
+        uint64_t sample_count = 0;
+        double sample_sum = 0.0;
+        std::vector<double> bucket_bounds;
+        std::vector<uint64_t> bucket_counts;
+    };
+
+    struct PendingLog {
+        int64_t timestamp_ms;
+        int level;  // 0=debug, 1=info, 2=warn, 3=error
+        std::string component;
+        std::string message;
+        std::vector<std::string> attr_keys;
+        std::vector<std::string> attr_values;
     };
 
     void batch_loop();
     void flush_signals();
     void flush_events();
     void flush_metrics();
+    void flush_logs();
 
     std::vector<uint8_t> compress(const std::string& data);
     void mqtt_publish(const std::string& topic, const std::vector<uint8_t>& payload);
@@ -161,6 +176,9 @@ private:
     std::mutex metrics_mutex_;
     std::vector<PendingMetric> pending_metrics_;
 
+    std::mutex logs_mutex_;
+    std::vector<PendingLog> pending_logs_;
+
     // Background thread for batching/flushing
     std::thread batch_thread_;
     std::condition_variable batch_cv_;
@@ -170,6 +188,7 @@ private:
     std::atomic<uint32_t> signal_seq_{0};
     std::atomic<uint32_t> event_seq_{0};
     std::atomic<uint32_t> metric_seq_{0};
+    std::atomic<uint32_t> log_seq_{0};
 
     // Stats
     mutable std::mutex stats_mutex_;

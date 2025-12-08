@@ -59,6 +59,12 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 - Transforms CAN signals to VSS using libvssdag
 - Publishes to DDS topic `rt/vss/signals`
 
+**vep_otel_probe** - OpenTelemetry bridge:
+- Receives metrics and logs via OTLP gRPC (port 4317)
+- Extracts resource attributes (service.name, host.name) for source identification
+- Converts to DDS messages (gauges, counters, histograms, logs)
+- Source ID format: `service@host` for multi-ECU environments
+
 ### Applications
 
 **vep_exporter** - Exports telemetry to cloud:
@@ -73,8 +79,15 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 **vep_mqtt_receiver** - MQTT receiver for testing:
 - Subscribes to MQTT topics
 - Decompresses with zstd
-- Decodes protobuf
+- Decodes protobuf (signals, events, metrics, logs)
 - Displays in human-readable or JSON format
+- Shows service labels for multi-source identification
+
+**vep_host_metrics** - Linux host metrics collector:
+- Collects CPU, memory, disk I/O, network, filesystem metrics
+- Follows OpenTelemetry semantic conventions
+- Exports via OTLP gRPC to `vep_otel_probe`
+- Includes service and host identification for multi-ECU environments
 
 ## Prerequisites
 

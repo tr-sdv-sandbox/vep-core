@@ -209,6 +209,9 @@ target_link_libraries(vep_mqtt_receiver PRIVATE
     ${ZSTD_LIBRARIES}
 )
 
+# vep_host_metrics - host metrics collector
+add_subdirectory(tools/vep_host_metrics)
+
 # ============================================================================
 # Kuksa-DDS Bridge (requires libkuksa-cpp)
 # ============================================================================
@@ -343,6 +346,7 @@ endif()
 message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport bridge)")
 message(STATUS "  Tools:")
 message(STATUS "    - vep_mqtt_receiver     (MQTT -> decompress -> display)")
+message(STATUS "    - vep_host_metrics      (Linux host metrics -> OTLP gRPC)")
 message(STATUS "")
 message(STATUS "Kuksa-DDS Bridge: ${KUKSA_BRIDGE_ENABLED}")
 message(STATUS "")
