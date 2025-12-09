@@ -128,8 +128,8 @@ add_library(transfer_proto STATIC ${TRANSFER_PROTO_SRC})
 target_include_directories(transfer_proto PUBLIC ${PROTO_OUTPUT_DIR})
 target_link_libraries(transfer_proto PUBLIC protobuf::libprotobuf)
 
-# Link abseil if available (required by protobuf on some platforms)
-if(absl_FOUND)
+# Link abseil if specific targets exist (required by protobuf on some platforms)
+if(TARGET absl::log_internal_check_op)
     target_link_libraries(transfer_proto PUBLIC
         absl::log_internal_check_op
         absl::log_internal_message
