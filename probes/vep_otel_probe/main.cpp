@@ -39,6 +39,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -466,21 +467,59 @@ private:
     std::vector<vep_KeyValue> attrs_;
 };
 
+void print_usage(const char* program) {
+    std::cout << "Usage: " << program << " [OPTIONS]\n"
+              << "\n"
+              << "OTLP-to-DDS Bridge - Receives OpenTelemetry metrics/logs via gRPC\n"
+              << "and publishes them to DDS topics.\n"
+              << "\n"
+              << "Options:\n"
+              << "  --port PORT    gRPC listen port (default: 4317)\n"
+              << "  --help         Show this help message\n"
+              << "\n"
+              << "Example:\n"
+              << "  " << program << " --port 4317\n";
+}
+
 int main(int argc, char* argv[]) {
     google::InitGoogleLogging(argv[0]);
     google::SetStderrLogging(google::INFO);
     FLAGS_colorlogtostderr = true;
 
+    // Parse arguments
+    int port = 4317;  // Default OTLP gRPC port
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        } else if (arg == "--port" || arg == "-p") {
+            if (i + 1 < argc) {
+                try {
+                    port = std::stoi(argv[++i]);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error: Invalid port number: " << argv[i] << "\n";
+                    return 1;
+                }
+            } else {
+                std::cerr << "Error: --port requires a value\n";
+                return 1;
+            }
+        } else {
+            // Try to parse as bare port number for backward compatibility
+            try {
+                port = std::stoi(arg);
+            } catch (const std::exception&) {
+                std::cerr << "Warning: Unknown argument: " << arg << "\n";
+            }
+        }
+    }
+
     LOG(INFO) << "OTLP-to-DDS Bridge starting...";
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
-
-    // Parse gRPC port
-    int port = 4317;  // Default OTLP gRPC port
-    if (argc > 1) {
-        port = std::stoi(argv[1]);
-    }
 
     std::string server_address = "0.0.0.0:" + std::to_string(port);
 

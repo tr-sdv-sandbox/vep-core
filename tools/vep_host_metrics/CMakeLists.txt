@@ -110,7 +110,6 @@ add_executable(vep_host_metrics main.cpp)
 
 target_link_libraries(vep_host_metrics PRIVATE
     vep_host_metrics_lib
-    gflags
     glog::glog
 )
 
@@ -119,5 +118,5 @@ target_link_libraries(vep_host_metrics PRIVATE
 # ============================================================================
 
 add_test(NAME integration_vep_host_metrics_runs
-    COMMAND vep_host_metrics --version
+    COMMAND vep_host_metrics --help
 )

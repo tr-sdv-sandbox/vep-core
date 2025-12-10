@@ -11,22 +11,28 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstring>
+#include <iostream>
 #include <thread>
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "proc_reader.hpp"
 #include "otlp_metrics_client.hpp"
 
-DEFINE_string(endpoint, "localhost:4317", "OTLP gRPC endpoint");
-DEFINE_int32(interval, 10, "Collection interval in seconds");
-DEFINE_string(service_name, "vep_host_metrics", "Service name for OTLP resource");
-DEFINE_bool(cpu, true, "Collect CPU metrics");
-DEFINE_bool(memory, true, "Collect memory metrics");
-DEFINE_bool(disk, true, "Collect disk I/O metrics");
-DEFINE_bool(network, true, "Collect network metrics");
-DEFINE_bool(filesystem, true, "Collect filesystem usage metrics");
+// Configuration with defaults
+struct Config {
+    std::string endpoint = "localhost:4317";
+    int interval = 10;
+    std::string service_name = "vep_host_metrics";
+    bool cpu = true;
+    bool memory = true;
+    bool disk = true;
+    bool network = true;
+    bool filesystem = true;
+};
+
+static Config g_config;
 
 namespace {
 std::atomic<bool> g_running{true};
@@ -310,43 +316,104 @@ void collect_filesystem_metrics(
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
-    gflags::SetUsageMessage(
-        "VEP Host Metrics Collector\n\n"
-        "Collects Linux host metrics and exports them via OTLP gRPC.\n\n"
-        "Example:\n"
-        "  vep_host_metrics --endpoint=localhost:4317 --interval=10");
-    gflags::SetVersionString("0.1.0");
-    gflags::ParseCommandLineFlags(&argc, &argv, true);
+void print_usage(const char* program) {
+    std::cout << "Usage: " << program << " [OPTIONS]\n"
+              << "\n"
+              << "VEP Host Metrics Collector - Exports Linux metrics via OTLP gRPC\n"
+              << "\n"
+              << "Options:\n"
+              << "  --endpoint HOST:PORT  OTLP gRPC endpoint (default: localhost:4317)\n"
+              << "  --interval SECS       Collection interval in seconds (default: 10)\n"
+              << "  --service-name NAME   Service name for OTLP resource (default: vep_host_metrics)\n"
+              << "  --no-cpu              Disable CPU metrics\n"
+              << "  --no-memory           Disable memory metrics\n"
+              << "  --no-disk             Disable disk I/O metrics\n"
+              << "  --no-network          Disable network metrics\n"
+              << "  --no-filesystem       Disable filesystem metrics\n"
+              << "  --help                Show this help message\n"
+              << "\n"
+              << "Example:\n"
+              << "  " << program << " --endpoint localhost:4317 --interval 10\n";
+}
 
+int main(int argc, char* argv[]) {
     google::InitGoogleLogging(argv[0]);
-    FLAGS_logtostderr = true;
+    google::SetStderrLogging(google::INFO);
+    FLAGS_colorlogtostderr = true;
+
+    // Parse arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "--help" || arg == "-h") {
+            print_usage(argv[0]);
+            return 0;
+        } else if (arg == "--endpoint") {
+            if (i + 1 < argc) {
+                g_config.endpoint = argv[++i];
+            } else {
+                std::cerr << "Error: --endpoint requires a value\n";
+                return 1;
+            }
+        } else if (arg == "--interval") {
+            if (i + 1 < argc) {
+                try {
+                    g_config.interval = std::stoi(argv[++i]);
+                } catch (const std::exception&) {
+                    std::cerr << "Error: Invalid interval value: " << argv[i] << "\n";
+                    return 1;
+                }
+            } else {
+                std::cerr << "Error: --interval requires a value\n";
+                return 1;
+            }
+        } else if (arg == "--service-name") {
+            if (i + 1 < argc) {
+                g_config.service_name = argv[++i];
+            } else {
+                std::cerr << "Error: --service-name requires a value\n";
+                return 1;
+            }
+        } else if (arg == "--no-cpu") {
+            g_config.cpu = false;
+        } else if (arg == "--no-memory") {
+            g_config.memory = false;
+        } else if (arg == "--no-disk") {
+            g_config.disk = false;
+        } else if (arg == "--no-network") {
+            g_config.network = false;
+        } else if (arg == "--no-filesystem") {
+            g_config.filesystem = false;
+        } else {
+            std::cerr << "Warning: Unknown argument: " << arg << "\n";
+        }
+    }
 
     // Setup signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
     LOG(INFO) << "VEP Host Metrics Collector starting";
-    LOG(INFO) << "  Endpoint: " << FLAGS_endpoint;
-    LOG(INFO) << "  Interval: " << FLAGS_interval << "s";
+    LOG(INFO) << "  Endpoint: " << g_config.endpoint;
+    LOG(INFO) << "  Interval: " << g_config.interval << "s";
     LOG(INFO) << "  Metrics: "
-              << (FLAGS_cpu ? "cpu " : "")
-              << (FLAGS_memory ? "memory " : "")
-              << (FLAGS_disk ? "disk " : "")
-              << (FLAGS_network ? "network " : "")
-              << (FLAGS_filesystem ? "filesystem" : "");
+              << (g_config.cpu ? "cpu " : "")
+              << (g_config.memory ? "memory " : "")
+              << (g_config.disk ? "disk " : "")
+              << (g_config.network ? "network " : "")
+              << (g_config.filesystem ? "filesystem" : "");
 
     // Create OTLP client
     OtlpConfig config;
-    config.endpoint = FLAGS_endpoint;
-    config.service_name = FLAGS_service_name;
+    config.endpoint = g_config.endpoint;
+    config.service_name = g_config.service_name;
 
     OtlpMetricsClient client(config);
 
     // Wait for OTLP endpoint to become available
     LOG(INFO) << "Waiting for OTLP endpoint...";
     while (g_running && !client.wait_for_connection(&g_running, 5)) {
-        LOG(INFO) << "Retrying connection to " << FLAGS_endpoint << "...";
+        LOG(INFO) << "Retrying connection to " << g_config.endpoint << "...";
     }
 
     if (!g_running) {
@@ -355,7 +422,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Pre-populate CPU baseline
-    if (FLAGS_cpu) {
+    if (g_config.cpu) {
         g_prev_cpu_times = ProcReader::read_cpu_times();
     }
 
@@ -375,19 +442,19 @@ int main(int argc, char* argv[]) {
         scope_info->set_version("0.1.0");
 
         // Collect enabled metrics
-        if (FLAGS_cpu) {
+        if (g_config.cpu) {
             collect_cpu_metrics(scope, ts);
         }
-        if (FLAGS_memory) {
+        if (g_config.memory) {
             collect_memory_metrics(scope, ts);
         }
-        if (FLAGS_disk) {
+        if (g_config.disk) {
             collect_disk_metrics(scope, ts);
         }
-        if (FLAGS_network) {
+        if (g_config.network) {
             collect_network_metrics(scope, ts);
         }
-        if (FLAGS_filesystem) {
+        if (g_config.filesystem) {
             collect_filesystem_metrics(scope, ts);
         }
 
@@ -400,7 +467,7 @@ int main(int argc, char* argv[]) {
 
         // Sleep for remainder of interval
         auto elapsed = std::chrono::steady_clock::now() - start;
-        auto sleep_time = std::chrono::seconds(FLAGS_interval) - elapsed;
+        auto sleep_time = std::chrono::seconds(g_config.interval) - elapsed;
         if (sleep_time > std::chrono::milliseconds(0) && g_running) {
             std::this_thread::sleep_for(sleep_time);
         }
