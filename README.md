@@ -53,6 +53,19 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 
 ### Probes (Data Producers)
 
+**vep_can_probe** - CAN-to-VSS probe:
+- Reads CAN frames from SocketCAN or IEEE 1722 AVTP interfaces
+- Transforms CAN signals to VSS using libvssdag
+- Publishes to DDS topic `rt/vss/signals`
+
+```bash
+# SocketCAN (default)
+./vep_can_probe --config mappings.yaml --interface vcan0 --dbc model3.dbc
+
+# IEEE 1722 AVTP over Ethernet
+./vep_can_probe --config mappings.yaml --interface eth0 --dbc model3.dbc --transport avtp
+```
+
 **vdr_can_simulator** - Simulates CAN bus data from a vehicle:
 - Generates realistic vehicle signals (speed, SOC, motor temps, doors, etc.)
 - Uses Tesla Model 3 DBC file for CAN encoding
@@ -194,6 +207,42 @@ Example compressed batch:
 Original: 2048 bytes (100 signals, full paths)
 Compressed: 412 bytes (80% reduction)
 ```
+
+## Permissions
+
+### AVTP Transport (IEEE 1722)
+
+AVTP uses raw Ethernet sockets which require elevated privileges:
+
+**Standalone:**
+```bash
+# Option 1: Run as root
+sudo ./vep_can_probe --transport avtp --interface eth0 ...
+
+# Option 2: Grant CAP_NET_RAW capability (preferred)
+sudo setcap cap_net_raw+ep ./vep_can_probe
+./vep_can_probe --transport avtp --interface eth0 ...
+```
+
+**Container:**
+```bash
+# Docker/Podman - add NET_RAW capability and host network
+docker run --cap-add NET_RAW --network host myimage vep_can_probe --transport avtp ...
+
+# Or use privileged mode (includes all capabilities)
+docker run --privileged --network host myimage vep_can_probe --transport avtp ...
+```
+
+### Virtual CAN (SocketCAN)
+
+Virtual CAN requires kernel module setup on the host:
+```bash
+sudo modprobe vcan
+sudo ip link add dev vcan0 type vcan
+sudo ip link set up vcan0
+```
+
+For containers, use `--network host` to access the host's vcan interfaces.
 
 ## License
 

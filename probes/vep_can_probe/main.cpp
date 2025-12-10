@@ -569,6 +569,7 @@ int main(int argc, char* argv[]) {
     std::string config_path = "config/vssdag_probe_config.yaml";
     std::string can_interface = "vcan0";
     std::string dbc_path = "";
+    std::string transport_str = "socketcan";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -578,14 +579,26 @@ int main(int argc, char* argv[]) {
             can_interface = argv[++i];
         } else if (arg == "--dbc" && i + 1 < argc) {
             dbc_path = argv[++i];
+        } else if (arg == "--transport" && i + 1 < argc) {
+            transport_str = argv[++i];
         } else if (arg == "--help") {
             std::cout << "Usage: " << argv[0] << " [options]\n"
-                      << "  --config PATH     Signal mappings YAML file\n"
-                      << "  --interface NAME  CAN interface (default: vcan0)\n"
-                      << "  --dbc PATH        DBC file for CAN decoding\n"
-                      << "  --help            Show this help\n";
+                      << "  --config PATH       Signal mappings YAML file\n"
+                      << "  --interface NAME    CAN/Ethernet interface (default: vcan0)\n"
+                      << "  --dbc PATH          DBC file for CAN decoding\n"
+                      << "  --transport TYPE    Transport: socketcan (default), avtp\n"
+                      << "  --help              Show this help\n";
             return 0;
         }
+    }
+
+    // Parse transport type
+    vssdag::CANTransport transport = vssdag::CANTransport::SOCKETCAN;
+    if (transport_str == "avtp" || transport_str == "AVTP") {
+        transport = vssdag::CANTransport::AVTP;
+    } else if (transport_str != "socketcan" && transport_str != "SOCKETCAN") {
+        LOG(ERROR) << "Unknown transport: " << transport_str << ". Use 'socketcan' or 'avtp'.";
+        return 1;
     }
 
     try {
@@ -613,7 +626,7 @@ int main(int argc, char* argv[]) {
         }
 
         auto can_source = std::make_unique<vssdag::CANSignalSource>(
-            can_interface, dbc_path, mappings);
+            transport, can_interface, dbc_path, mappings);
 
         if (!can_source->initialize()) {
             LOG(ERROR) << "Failed to initialize CAN source on " << can_interface;
@@ -621,6 +634,7 @@ int main(int argc, char* argv[]) {
         }
 
         LOG(INFO) << "CAN source initialized: " << can_interface
+                  << " (transport: " << transport_str << ")"
                   << " with DBC: " << dbc_path;
 
         // Create DDS participant and writer
