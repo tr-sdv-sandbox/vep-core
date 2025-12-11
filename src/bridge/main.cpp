@@ -34,6 +34,7 @@ DEFINE_string(signals_topic, "rt/vss/signals", "DDS topic for sensor signals");
 DEFINE_string(actuator_target_topic, "rt/vss/actuators/target", "DDS topic for actuator targets");
 DEFINE_string(actuator_actual_topic, "rt/vss/actuators/actual", "DDS topic for actuator actuals");
 DEFINE_int32(stats_interval, 30, "Statistics logging interval in seconds (0=disabled)");
+DEFINE_int32(reconnect_delay, 5, "Delay between reconnection attempts in seconds");
 
 // Global shutdown flag
 std::atomic<bool> g_shutdown{false};
@@ -70,55 +71,78 @@ int main(int argc, char* argv[]) {
     config.dds_actuator_target_topic = FLAGS_actuator_target_topic;
     config.dds_actuator_actual_topic = FLAGS_actuator_actual_topic;
 
-    // Create and initialize bridge
-    bridge::KuksaDdsBridge bridge(config);
-
-    if (!bridge.initialize()) {
-        LOG(ERROR) << "Failed to initialize bridge";
-        return 1;
-    }
-
-    if (!bridge.start()) {
-        LOG(ERROR) << "Failed to start bridge";
-        return 1;
-    }
-
-    LOG(INFO) << "Bridge running. Press Ctrl+C to stop.";
-
-    // Main loop - just wait for shutdown signal
-    auto last_stats_time = std::chrono::steady_clock::now();
-
+    // Main loop with automatic reconnection
     while (!g_shutdown) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Create bridge instance
+        auto bridge = std::make_unique<bridge::KuksaDdsBridge>(config);
 
-        // Periodic stats logging
-        if (FLAGS_stats_interval > 0) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time).count();
-            if (elapsed >= FLAGS_stats_interval) {
-                auto stats = bridge.stats();
-                LOG(INFO) << "Bridge stats:"
-                          << " dds_signals=" << stats.dds_signals_received
-                          << " dds_actuals=" << stats.dds_actuator_actuals_received
-                          << " kuksa_published=" << stats.kuksa_signals_published
-                          << " actuator_requests=" << stats.actuator_requests_received
-                          << " dds_targets_sent=" << stats.dds_actuator_targets_sent;
-                last_stats_time = now;
+        // Try to initialize (connect to KUKSA)
+        if (!bridge->initialize()) {
+            LOG(WARNING) << "Failed to connect to KUKSA at " << FLAGS_kuksa
+                         << ", retrying in " << FLAGS_reconnect_delay << "s...";
+            for (int i = 0; i < FLAGS_reconnect_delay && !g_shutdown; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            continue;
+        }
+
+        if (!bridge->start()) {
+            LOG(WARNING) << "Failed to start bridge, retrying in " << FLAGS_reconnect_delay << "s...";
+            bridge->stop();
+            for (int i = 0; i < FLAGS_reconnect_delay && !g_shutdown; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            continue;
+        }
+
+        LOG(INFO) << "Bridge running. Press Ctrl+C to stop.";
+
+        // Run loop - monitor for shutdown or connection loss
+        auto last_stats_time = std::chrono::steady_clock::now();
+        bool connection_lost = false;
+
+        while (!g_shutdown && !connection_lost) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            // Periodic stats logging
+            if (FLAGS_stats_interval > 0) {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_time).count();
+                if (elapsed >= FLAGS_stats_interval) {
+                    auto stats = bridge->stats();
+                    LOG(INFO) << "Bridge stats:"
+                              << " dds_signals=" << stats.dds_signals_received
+                              << " dds_actuals=" << stats.dds_actuator_actuals_received
+                              << " kuksa_published=" << stats.kuksa_signals_published
+                              << " actuator_requests=" << stats.actuator_requests_received
+                              << " dds_targets_sent=" << stats.dds_actuator_targets_sent;
+                    last_stats_time = now;
+                }
+            }
+
+            // TODO: Add health check to detect connection loss
+            // For now, the bridge will detect errors during publish/subscribe
+        }
+
+        // Clean up before reconnecting or exiting
+        LOG(INFO) << "Stopping bridge...";
+        auto stats = bridge->stats();
+        LOG(INFO) << "Session stats:"
+                  << " dds_signals=" << stats.dds_signals_received
+                  << " dds_actuals=" << stats.dds_actuator_actuals_received
+                  << " kuksa_published=" << stats.kuksa_signals_published
+                  << " actuator_requests=" << stats.actuator_requests_received
+                  << " dds_targets_sent=" << stats.dds_actuator_targets_sent;
+        bridge->stop();
+        bridge.reset();
+
+        if (!g_shutdown && connection_lost) {
+            LOG(WARNING) << "Connection lost, reconnecting in " << FLAGS_reconnect_delay << "s...";
+            for (int i = 0; i < FLAGS_reconnect_delay && !g_shutdown; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
     }
-
-    LOG(INFO) << "Shutting down bridge...";
-    bridge.stop();
-
-    // Final stats
-    auto stats = bridge.stats();
-    LOG(INFO) << "Final stats:"
-              << " dds_signals=" << stats.dds_signals_received
-              << " dds_actuals=" << stats.dds_actuator_actuals_received
-              << " kuksa_published=" << stats.kuksa_signals_published
-              << " actuator_requests=" << stats.actuator_requests_received
-              << " dds_targets_sent=" << stats.dds_actuator_targets_sent;
 
     LOG(INFO) << "Bridge stopped";
     return 0;

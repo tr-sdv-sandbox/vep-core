@@ -266,6 +266,30 @@ if(kuksa_FOUND)
         COMMAND kuksa_dds_bridge --version
     )
 
+    # Integration tests for kuksa_dds_bridge reconnection logic
+    find_package(GTest QUIET)
+    if(GTest_FOUND AND VEP_BUILD_TESTS)
+        add_executable(test_kuksa_dds_bridge_reconnect
+            tests/integration/test_kuksa_dds_bridge_reconnect.cpp
+        )
+
+        target_link_libraries(test_kuksa_dds_bridge_reconnect PRIVATE
+            kuksa_dds_bridge_lib
+            GTest::gtest
+            glog::glog
+        )
+
+        add_test(NAME integration_kuksa_dds_bridge_reconnect
+            COMMAND test_kuksa_dds_bridge_reconnect
+        )
+
+        # This test requires Docker and may take longer
+        set_tests_properties(integration_kuksa_dds_bridge_reconnect PROPERTIES
+            TIMEOUT 120
+            LABELS "integration;docker"
+        )
+    endif()
+
     set(KUKSA_BRIDGE_ENABLED "Yes")
 else()
     set(KUKSA_BRIDGE_ENABLED "No (libkuksa-cpp not found)")
