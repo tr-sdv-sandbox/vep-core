@@ -35,6 +35,7 @@ DEFINE_string(actuator_target_topic, "rt/vss/actuators/target", "DDS topic for a
 DEFINE_string(actuator_actual_topic, "rt/vss/actuators/actual", "DDS topic for actuator actuals");
 DEFINE_int32(stats_interval, 30, "Statistics logging interval in seconds (0=disabled)");
 DEFINE_int32(reconnect_delay, 5, "Delay between reconnection attempts in seconds");
+DEFINE_int32(ready_timeout, 60, "Timeout in seconds waiting for KUKSA to be ready (increase for many actuators)");
 
 // Global shutdown flag
 std::atomic<bool> g_shutdown{false};
@@ -70,6 +71,7 @@ int main(int argc, char* argv[]) {
     config.dds_signals_topic = FLAGS_signals_topic;
     config.dds_actuator_target_topic = FLAGS_actuator_target_topic;
     config.dds_actuator_actual_topic = FLAGS_actuator_actual_topic;
+    config.ready_timeout_seconds = FLAGS_ready_timeout;
 
     // Main loop with automatic reconnection
     while (!g_shutdown) {

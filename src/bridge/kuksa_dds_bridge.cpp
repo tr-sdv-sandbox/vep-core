@@ -324,8 +324,10 @@ bool KuksaDdsBridge::start() {
         return false;
     }
 
-    // Wait for Kuksa to be ready
-    auto ready_status = kuksa_client_->wait_until_ready(std::chrono::milliseconds(10000));
+    // Wait for Kuksa to be ready (may take a while with many actuators)
+    auto timeout_ms = config_.ready_timeout_seconds * 1000;
+    LOG(INFO) << "Waiting up to " << config_.ready_timeout_seconds << "s for KUKSA client to be ready...";
+    auto ready_status = kuksa_client_->wait_until_ready(std::chrono::milliseconds(timeout_ms));
     if (!ready_status.ok()) {
         LOG(ERROR) << "Kuksa client not ready: " << ready_status;
         return false;

@@ -102,6 +102,44 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 - Exports via OTLP gRPC to `vep_otel_probe`
 - Includes service and host identification for multi-ECU environments
 
+### Bridges
+
+**kuksa_dds_bridge** - Bidirectional KUKSA ↔ DDS bridge:
+- Discovers signals from KUKSA databroker schema
+- Sensors: DDS `rt/vss/signals` → KUKSA (apps can subscribe)
+- Actuators: KUKSA `set()` → DDS `rt/vss/actuators/target`
+- Actuals: DDS `rt/vss/actuators/actual` → KUKSA
+
+```bash
+# Basic usage
+kuksa_dds_bridge --kuksa=localhost:55555
+
+# With specific pattern (faster startup with fewer signals)
+kuksa_dds_bridge --kuksa=localhost:55555 --pattern=Vehicle.Cabin
+
+# Increase timeout for slow targets or many actuators (default: 60s)
+kuksa_dds_bridge --kuksa=localhost:55555 --ready_timeout=120
+```
+
+**Note:** The `--ready_timeout` flag controls how long the bridge waits for KUKSA
+actuator registration to complete. With large VSS trees (500+ actuators), increase
+this value, especially on ARM64 targets.
+
+**kuksa_logger** - Real-time VSS signal logger (like candump for VSS):
+- Subscribes to KUKSA signals matching a pattern
+- Displays values with timestamps and quality indicators
+
+```bash
+# Log all Vehicle signals
+kuksa_logger --address=localhost:55555
+
+# Log specific branch
+kuksa_logger --address=localhost:55555 --pattern=Vehicle.Speed
+
+# Increase timeout for many signals (default: 30s)
+kuksa_logger --address=localhost:55555 --ready_timeout=60
+```
+
 ## Prerequisites
 
 Install dependencies:

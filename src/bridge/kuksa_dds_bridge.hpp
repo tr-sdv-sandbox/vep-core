@@ -49,6 +49,10 @@ struct BridgeConfig {
     std::string dds_signals_topic = "rt/vss/signals";
     std::string dds_actuator_target_topic = "rt/vss/actuators/target";
     std::string dds_actuator_actual_topic = "rt/vss/actuators/actual";
+
+    // Timeout waiting for KUKSA client to be ready (seconds)
+    // Increase for many actuators or slow targets (ARM64)
+    int ready_timeout_seconds = 60;
 };
 
 /// Kuksa-DDS Bridge
