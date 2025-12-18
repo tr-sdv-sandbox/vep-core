@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 
-#include "bridge/kuksa_dds_bridge.hpp"
+#include "kuksa_dds_bridge.hpp"
 
 #include <atomic>
 #include <chrono>
