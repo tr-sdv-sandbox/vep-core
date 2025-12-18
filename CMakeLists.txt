@@ -137,18 +137,18 @@ if(TARGET absl::log_internal_check_op)
 endif()
 
 # ============================================================================
-# VEP Exporter (top-level application: DDS -> compressed MQTT)
+# VEP Exporter (bridges/vep_exporter: DDS -> compressed MQTT)
 # ============================================================================
 
 # Exporter library (protobuf + zstd compressed MQTT sink)
 add_library(vep_exporter_lib STATIC
-    vep-exporter/src/compressed_mqtt_sink.cpp
-    vep-exporter/src/dds_proto_conversion.cpp
-    vep-exporter/src/subscriber.cpp
+    bridges/vep_exporter/src/compressed_mqtt_sink.cpp
+    bridges/vep_exporter/src/dds_proto_conversion.cpp
+    bridges/vep_exporter/src/subscriber.cpp
 )
 
 target_include_directories(vep_exporter_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/vep-exporter/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/vep_exporter/src
     ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
     ${ZSTD_INCLUDE_DIRS}
@@ -166,11 +166,11 @@ target_link_libraries(vep_exporter_lib PUBLIC
 
 # Exporter executable
 add_executable(vep_exporter
-    vep-exporter/main.cpp
+    bridges/vep_exporter/main.cpp
 )
 
 target_include_directories(vep_exporter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/vep-exporter/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/vep_exporter/src
 )
 
 target_link_libraries(vep_exporter PRIVATE
@@ -209,7 +209,6 @@ add_executable(vep_mqtt_receiver
 )
 
 target_include_directories(vep_mqtt_receiver PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
     ${ZSTD_INCLUDE_DIRS}
@@ -233,13 +232,14 @@ add_subdirectory(tools/vep_host_metrics)
 if(kuksa_FOUND)
     # Bridge library
     add_library(kuksa_dds_bridge_lib STATIC
-        src/bridge/vss_config.cpp
-        src/bridge/kuksa_dds_bridge.cpp
-        src/bridge/rt_transport.cpp
+        bridges/kuksa_dds_bridge/vss_config.cpp
+        bridges/kuksa_dds_bridge/kuksa_dds_bridge.cpp
+        bridges/common/rt_transport.cpp
     )
 
     target_include_directories(kuksa_dds_bridge_lib PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/bridges/kuksa_dds_bridge
+        ${CMAKE_CURRENT_SOURCE_DIR}/bridges/common
     )
 
     target_link_libraries(kuksa_dds_bridge_lib PUBLIC
@@ -252,7 +252,7 @@ if(kuksa_FOUND)
 
     # Bridge executable
     add_executable(kuksa_dds_bridge
-        src/bridge/main.cpp
+        bridges/kuksa_dds_bridge/main.cpp
     )
 
     target_link_libraries(kuksa_dds_bridge PRIVATE
@@ -301,12 +301,13 @@ endif()
 
 # RT bridge library
 add_library(rt_dds_bridge_lib STATIC
-    src/bridge/rt_transport.cpp
-    src/rt_bridge/rt_dds_bridge.cpp
+    bridges/common/rt_transport.cpp
+    bridges/rt_dds_bridge/rt_dds_bridge.cpp
 )
 
 target_include_directories(rt_dds_bridge_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/rt_dds_bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/common
 )
 
 target_link_libraries(rt_dds_bridge_lib PUBLIC
@@ -317,7 +318,7 @@ target_link_libraries(rt_dds_bridge_lib PUBLIC
 
 # RT bridge executable
 add_executable(rt_dds_bridge
-    src/rt_bridge/main.cpp
+    bridges/rt_dds_bridge/main.cpp
 )
 
 target_link_libraries(rt_dds_bridge PRIVATE

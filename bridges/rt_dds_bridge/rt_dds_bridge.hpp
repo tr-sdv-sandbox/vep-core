@@ -20,7 +20,7 @@
 ///
 /// The RtTransport interface is abstract - implement for your specific RT protocol.
 
-#include "bridge/rt_transport.hpp"
+#include "rt_transport.hpp"
 
 #include "common/dds_wrapper.hpp"
 #include "vss-signal.h"

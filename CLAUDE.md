@@ -26,16 +26,16 @@ vep-core/
 │   ├── vep_can_probe/         # CAN → VSS → DDS (SocketCAN or AVTP)
 │   ├── vep_otel_probe/        # OTLP gRPC :4317 → DDS
 │   └── vep_avtp_probe/        # IEEE 1722 AVTP → DDS (raw frames)
-├── src/
-│   ├── bridge/                # kuksa_dds_bridge (KUKSA ↔ DDS)
-│   ├── rt_bridge/             # rt_dds_bridge (DDS ↔ RT transport)
-│   └── probes/vdr_can_simulator/  # Test CAN data generator
-├── vep-exporter/              # DDS → compressed MQTT exporter
-│   └── src/
-│       ├── compressed_mqtt_sink.cpp  # Protobuf + zstd compression
-│       ├── dds_proto_conversion.cpp  # DDS → protobuf conversion
-│       └── subscriber.cpp            # DDS subscription management
-├── tools/
+├── bridges/                   # DDS bridges to external systems
+│   ├── common/                # Shared code (rt_transport)
+│   ├── kuksa_dds_bridge/      # KUKSA ↔ DDS bidirectional
+│   ├── rt_dds_bridge/         # DDS ↔ RT transport
+│   └── vep_exporter/          # DDS → compressed MQTT (one-way)
+│       └── src/
+│           ├── compressed_mqtt_sink.cpp
+│           ├── dds_proto_conversion.cpp
+│           └── subscriber.cpp
+├── tools/                     # Test/debug utilities
 │   ├── vep_mqtt_receiver/     # MQTT → decompress → display
 │   └── vep_host_metrics/      # Linux metrics → OTLP gRPC
 ├── proto/
@@ -52,9 +52,9 @@ vep-core/
 | `vep_can_probe` | `probes/vep_can_probe/` | CAN frames → VSS signals → DDS |
 | `vep_otel_probe` | `probes/vep_otel_probe/` | OTLP metrics/logs → DDS |
 | `vep_avtp_probe` | `probes/vep_avtp_probe/` | IEEE 1722 AVTP → DDS |
-| `vep_exporter` | `vep-exporter/` | DDS → batched/compressed MQTT |
-| `kuksa_dds_bridge` | `src/bridge/` | KUKSA databroker ↔ DDS |
-| `rt_dds_bridge` | `src/rt_bridge/` | DDS ↔ RT transport (loopback for testing) |
+| `vep_exporter` | `bridges/vep_exporter/` | DDS → batched/compressed MQTT |
+| `kuksa_dds_bridge` | `bridges/kuksa_dds_bridge/` | KUKSA databroker ↔ DDS |
+| `rt_dds_bridge` | `bridges/rt_dds_bridge/` | DDS ↔ RT transport (loopback for testing) |
 | `vep_mqtt_receiver` | `tools/vep_mqtt_receiver/` | MQTT receiver/decoder |
 | `vep_host_metrics` | `tools/vep_host_metrics/` | Linux metrics collector |
 
