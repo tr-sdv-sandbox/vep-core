@@ -1,9 +1,9 @@
 // Copyright 2025 COVESA IFEX VDR Integration Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "dds_proto_conversion.hpp"
+#include "wire_encoder.hpp"
 
-namespace integration {
+namespace vep::exporter {
 
 vep::transfer::Quality convert_quality(vep_VssQuality dds_quality) {
     switch (dds_quality) {
@@ -61,7 +61,7 @@ void convert_struct_field(const vep_VssStructField& dds_field,
             pb_field->set_string_val(dds_field.string_value ? dds_field.string_value : "");
             break;
 
-        // Array types - check buffer is not null before iterating
+        // Array types
         case vep_VSS_VALUE_TYPE_BOOL_ARRAY: {
             auto* arr = pb_field->mutable_bool_array();
             if (dds_field.bool_array._buffer) {
@@ -117,8 +117,6 @@ void convert_struct_field(const vep_VssStructField& dds_field,
             break;
         }
 
-        // Note: Nested structs in struct fields not supported in DDS IDL
-        // (to avoid circular dependency), but we handle it here for completeness
         default:
             break;
     }
@@ -178,7 +176,7 @@ bool convert_value_to_signal(const vep_VssValue& dds_value,
             pb_signal->set_string_val(dds_value.string_value ? dds_value.string_value : "");
             return true;
 
-        // Array types - check buffer is not null before iterating
+        // Array types
         case vep_VSS_VALUE_TYPE_BOOL_ARRAY: {
             auto* arr = pb_signal->mutable_bool_array();
             if (dds_value.bool_array._buffer) {
@@ -306,7 +304,6 @@ bool convert_value_to_signal(const vep_VssValue& dds_value,
         }
 
         case vep_VSS_VALUE_TYPE_EMPTY:
-            // No value to set
             return true;
 
         default:
@@ -314,4 +311,126 @@ bool convert_value_to_signal(const vep_VssValue& dds_value,
     }
 }
 
-}  // namespace integration
+void encode_vss_signal(const vep_VssSignal& msg,
+                       vep::transfer::Signal* pb_signal,
+                       int64_t base_timestamp_ms) {
+    pb_signal->set_path(msg.path ? msg.path : "");
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_signal->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+    pb_signal->set_quality(convert_quality(msg.quality));
+    convert_value_to_signal(msg.value, pb_signal);
+}
+
+void encode_event(const vep_Event& msg,
+                  vep::transfer::Event* pb_event,
+                  int64_t base_timestamp_ms) {
+    pb_event->set_event_id(msg.event_id ? msg.event_id : "");
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_event->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+    pb_event->set_category(msg.category ? msg.category : "");
+    pb_event->set_event_type(msg.event_type ? msg.event_type : "");
+    pb_event->set_severity(static_cast<vep::transfer::Severity>(msg.severity));
+}
+
+void encode_gauge(const vep_OtelGauge& msg,
+                  vep::transfer::Metric* pb_metric,
+                  int64_t base_timestamp_ms) {
+    pb_metric->set_name(msg.name ? msg.name : "");
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_metric->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+    pb_metric->set_gauge(msg.value);
+
+    // Add source_id as a label
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        pb_metric->add_label_keys("service");
+        pb_metric->add_label_values(msg.header.source_id);
+    }
+
+    for (uint32_t i = 0; i < msg.labels._length; ++i) {
+        if (msg.labels._buffer[i].key) {
+            pb_metric->add_label_keys(msg.labels._buffer[i].key);
+            pb_metric->add_label_values(
+                msg.labels._buffer[i].value ? msg.labels._buffer[i].value : "");
+        }
+    }
+}
+
+void encode_counter(const vep_OtelCounter& msg,
+                    vep::transfer::Metric* pb_metric,
+                    int64_t base_timestamp_ms) {
+    pb_metric->set_name(msg.name ? msg.name : "");
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_metric->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+    pb_metric->set_counter(msg.value);
+
+    // Add source_id as a label
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        pb_metric->add_label_keys("service");
+        pb_metric->add_label_values(msg.header.source_id);
+    }
+
+    for (uint32_t i = 0; i < msg.labels._length; ++i) {
+        if (msg.labels._buffer[i].key) {
+            pb_metric->add_label_keys(msg.labels._buffer[i].key);
+            pb_metric->add_label_values(
+                msg.labels._buffer[i].value ? msg.labels._buffer[i].value : "");
+        }
+    }
+}
+
+void encode_histogram(const vep_OtelHistogram& msg,
+                      vep::transfer::Metric* pb_metric,
+                      int64_t base_timestamp_ms) {
+    pb_metric->set_name(msg.name ? msg.name : "");
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_metric->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+
+    auto* hist = pb_metric->mutable_histogram();
+    hist->set_sample_count(msg.sample_count);
+    hist->set_sample_sum(msg.sample_sum);
+
+    for (uint32_t i = 0; i < msg.buckets._length; ++i) {
+        hist->add_bucket_bounds(msg.buckets._buffer[i].upper_bound);
+        hist->add_bucket_counts(msg.buckets._buffer[i].cumulative_count);
+    }
+
+    // Add source_id as a label
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        pb_metric->add_label_keys("service");
+        pb_metric->add_label_values(msg.header.source_id);
+    }
+
+    for (uint32_t i = 0; i < msg.labels._length; ++i) {
+        if (msg.labels._buffer[i].key) {
+            pb_metric->add_label_keys(msg.labels._buffer[i].key);
+            pb_metric->add_label_values(
+                msg.labels._buffer[i].value ? msg.labels._buffer[i].value : "");
+        }
+    }
+}
+
+void encode_log(const vep_OtelLogEntry& msg,
+                vep::transfer::LogEntry* pb_log,
+                int64_t base_timestamp_ms) {
+    int64_t ts_ms = msg.header.timestamp_ns / 1000000;
+    pb_log->set_timestamp_delta_ms(static_cast<uint32_t>(ts_ms - base_timestamp_ms));
+    pb_log->set_level(static_cast<vep::transfer::LogLevel>(msg.level));
+    pb_log->set_component(msg.component ? msg.component : "");
+    pb_log->set_message(msg.message ? msg.message : "");
+
+    // Add source_id as an attribute
+    if (msg.header.source_id && msg.header.source_id[0] != '\0') {
+        pb_log->add_attr_keys("service");
+        pb_log->add_attr_values(msg.header.source_id);
+    }
+
+    for (uint32_t i = 0; i < msg.attributes._length; ++i) {
+        if (msg.attributes._buffer[i].key) {
+            pb_log->add_attr_keys(msg.attributes._buffer[i].key);
+            pb_log->add_attr_values(
+                msg.attributes._buffer[i].value ? msg.attributes._buffer[i].value : "");
+        }
+    }
+}
+
+}  // namespace vep::exporter

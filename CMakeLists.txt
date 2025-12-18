@@ -137,44 +137,23 @@ if(TARGET absl::log_internal_check_op)
 endif()
 
 # ============================================================================
+# Exporter Common Libraries (reusable across MQTT, SOME/IP, etc.)
+# ============================================================================
+
+add_subdirectory(bridges/exporter_common)
+
+# ============================================================================
 # VEP Exporter (bridges/vep_exporter: DDS -> compressed MQTT)
 # ============================================================================
 
-# Exporter library (protobuf + zstd compressed MQTT sink)
-add_library(vep_exporter_lib STATIC
-    bridges/vep_exporter/src/compressed_mqtt_sink.cpp
-    bridges/vep_exporter/src/dds_proto_conversion.cpp
-    bridges/vep_exporter/src/subscriber.cpp
-)
-
-target_include_directories(vep_exporter_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/vep_exporter/src
-    ${PROTO_OUTPUT_DIR}
-    ${MOSQUITTO_INCLUDE_DIRS}
-    ${ZSTD_INCLUDE_DIRS}
-)
-
-# Exporter links vep_idl which contains all message types
-target_link_libraries(vep_exporter_lib PUBLIC
-    vep_dds_common     # From vep-dds: DDS wrappers
-    vep_idl            # All IDL types from vep-schema
-    transfer_proto     # Our protobuf transfer types
-    glog::glog
-    ${MOSQUITTO_LIBRARIES}
-    ${ZSTD_LIBRARIES}
-)
-
-# Exporter executable
+# Exporter executable (uses modular exporter_common libraries)
 add_executable(vep_exporter
     bridges/vep_exporter/main.cpp
 )
 
-target_include_directories(vep_exporter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/bridges/vep_exporter/src
-)
-
 target_link_libraries(vep_exporter PRIVATE
-    vep_exporter_lib
+    vep_exporter_common  # Encoding, batching, compression, pipeline, subscriber
+    vep_mqtt_sink        # MQTT transport
     yaml-cpp::yaml-cpp
     glog::glog
 )
@@ -209,17 +188,14 @@ add_executable(vep_mqtt_receiver
 )
 
 target_include_directories(vep_mqtt_receiver PRIVATE
-    ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
-    ${ZSTD_INCLUDE_DIRS}
 )
 
 target_link_libraries(vep_mqtt_receiver PRIVATE
-    transfer_proto
+    vep_exporter_common      # Decompressor, wire_decoder
     nlohmann_json::nlohmann_json
     glog::glog
     ${MOSQUITTO_LIBRARIES}
-    ${ZSTD_LIBRARIES}
 )
 
 # vep_host_metrics - host metrics collector
@@ -362,7 +338,8 @@ message(STATUS "  zstd: ${ZSTD_VERSION}")
 message(STATUS "")
 message(STATUS "Components:")
 message(STATUS "  Libraries:")
-message(STATUS "    - vep_exporter_lib      (protobuf + zstd compressed MQTT sink)")
+message(STATUS "    - vep_exporter_common   (wire encoding, batching, compression, DDS subscriber)")
+message(STATUS "    - vep_mqtt_sink         (MQTT transport sink)")
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge_lib  (Kuksa <-> DDS bridge)")
 endif()

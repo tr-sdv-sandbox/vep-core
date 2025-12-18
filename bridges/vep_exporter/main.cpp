@@ -4,19 +4,20 @@
 /// @file main.cpp
 /// @brief VEP Exporter - Subscribes to DDS topics and exports via compressed MQTT
 ///
-/// This application wires SubscriptionManager with CompressedMqttSink
+/// This application wires SubscriptionManager with ExporterPipeline
 /// to create a bandwidth-efficient vehicle-to-cloud data export pipeline.
 ///
 /// Architecture:
-///   DDS Topics → SubscriptionManager → CompressedMqttSink → MQTT Broker
+///   DDS Topics → SubscriptionManager → ExporterPipeline → TransportSink → MQTT
 ///
 /// Usage:
 ///   vep_exporter [--config config.yaml]
 
 #include "common/dds_wrapper.hpp"
-#include "compressed_mqtt_sink.hpp"
+#include "exporter_pipeline.hpp"
+#include "mqtt_sink.hpp"
+#include "compressor.hpp"
 #include "subscriber.hpp"
-#include "vss-signal.h"
 
 #include <glog/logging.h>
 #include <yaml-cpp/yaml.h>
@@ -39,16 +40,17 @@ void signal_handler(int sig) {
 void print_usage(const char* prog) {
     std::cout << "Usage: " << prog << " [OPTIONS]\n"
               << "\n"
-              << "VDR Exporter - Exports vehicle telemetry from DDS to cloud via MQTT\n"
+              << "VEP Exporter - Exports vehicle telemetry from DDS to cloud via MQTT\n"
               << "\n"
               << "Options:\n"
               << "  --config FILE     Load configuration from YAML file\n"
               << "  --broker HOST     MQTT broker host (default: localhost)\n"
               << "  --port PORT       MQTT broker port (default: 1883)\n"
-              << "  --client-id ID    MQTT client ID (default: vdr_exporter)\n"
+              << "  --client-id ID    MQTT client ID (default: vep_exporter)\n"
               << "  --batch-size N    Max signals per batch (default: 100)\n"
               << "  --batch-timeout MS  Batch timeout in ms (default: 1000)\n"
               << "  --compression N   Zstd compression level 1-19 (default: 3)\n"
+              << "  --no-compression  Disable compression\n"
               << "  --help            Show this help message\n"
               << "\n"
               << "Example:\n"
@@ -57,8 +59,11 @@ void print_usage(const char* prog) {
 }
 
 struct Config {
-    integration::CompressedMqttConfig mqtt;
+    vep::exporter::MqttConfig mqtt;
+    vep::exporter::PipelineConfig pipeline;
     integration::SubscriptionConfig sub;
+    std::string compressor_type = "zstd";
+    int compression_level = 3;
 };
 
 Config parse_args(int argc, char* argv[]) {
@@ -88,17 +93,18 @@ Config parse_args(int argc, char* argv[]) {
 
                 if (yaml["batching"]) {
                     auto batch = yaml["batching"];
-                    if (batch["max_signals"]) config.mqtt.batch_max_signals = batch["max_signals"].as<size_t>();
-                    if (batch["max_events"]) config.mqtt.batch_max_events = batch["max_events"].as<size_t>();
-                    if (batch["max_metrics"]) config.mqtt.batch_max_metrics = batch["max_metrics"].as<size_t>();
+                    if (batch["max_signals"]) config.pipeline.batch_max_signals = batch["max_signals"].as<size_t>();
+                    if (batch["max_events"]) config.pipeline.batch_max_events = batch["max_events"].as<size_t>();
+                    if (batch["max_metrics"]) config.pipeline.batch_max_metrics = batch["max_metrics"].as<size_t>();
                     if (batch["timeout_ms"]) {
-                        config.mqtt.batch_timeout = std::chrono::milliseconds(batch["timeout_ms"].as<int>());
+                        config.pipeline.batch_timeout = std::chrono::milliseconds(batch["timeout_ms"].as<int>());
                     }
                 }
 
                 if (yaml["compression"]) {
                     auto comp = yaml["compression"];
-                    if (comp["level"]) config.mqtt.zstd_compression_level = comp["level"].as<int>();
+                    if (comp["type"]) config.compressor_type = comp["type"].as<std::string>();
+                    if (comp["level"]) config.compression_level = comp["level"].as<int>();
                 }
 
                 if (yaml["subscriptions"]) {
@@ -123,11 +129,13 @@ Config parse_args(int argc, char* argv[]) {
         } else if (arg == "--client-id" && i + 1 < argc) {
             config.mqtt.client_id = argv[++i];
         } else if (arg == "--batch-size" && i + 1 < argc) {
-            config.mqtt.batch_max_signals = std::stoul(argv[++i]);
+            config.pipeline.batch_max_signals = std::stoul(argv[++i]);
         } else if (arg == "--batch-timeout" && i + 1 < argc) {
-            config.mqtt.batch_timeout = std::chrono::milliseconds(std::stoi(argv[++i]));
+            config.pipeline.batch_timeout = std::chrono::milliseconds(std::stoi(argv[++i]));
         } else if (arg == "--compression" && i + 1 < argc) {
-            config.mqtt.zstd_compression_level = std::stoi(argv[++i]);
+            config.compression_level = std::stoi(argv[++i]);
+        } else if (arg == "--no-compression") {
+            config.compressor_type = "none";
         } else {
             LOG(WARNING) << "Unknown argument: " << arg;
         }
@@ -137,13 +145,14 @@ Config parse_args(int argc, char* argv[]) {
 }
 
 void log_config(const Config& config) {
-    LOG(INFO) << "=== VDR Exporter Configuration ===";
+    LOG(INFO) << "=== VEP Exporter Configuration ===";
     LOG(INFO) << "MQTT Broker: " << config.mqtt.broker_host << ":" << config.mqtt.broker_port;
     LOG(INFO) << "Client ID: " << config.mqtt.client_id;
     LOG(INFO) << "Topic prefix: " << config.mqtt.topic_prefix;
-    LOG(INFO) << "Batching: " << config.mqtt.batch_max_signals << " signals, "
-              << config.mqtt.batch_timeout.count() << "ms timeout";
-    LOG(INFO) << "Compression level: " << config.mqtt.zstd_compression_level;
+    LOG(INFO) << "Batching: " << config.pipeline.batch_max_signals << " signals, "
+              << config.pipeline.batch_timeout.count() << "ms timeout";
+    LOG(INFO) << "Compression: " << config.compressor_type
+              << (config.compressor_type == "zstd" ? " (level " + std::to_string(config.compression_level) + ")" : "");
     LOG(INFO) << "Subscriptions: vss=" << config.sub.vss_signals
               << " events=" << config.sub.events
               << " gauges=" << config.sub.gauges
@@ -160,7 +169,7 @@ int main(int argc, char* argv[]) {
     FLAGS_logtostderr = true;
     FLAGS_colorlogtostderr = true;
 
-    LOG(INFO) << "VDR Exporter starting...";
+    LOG(INFO) << "VEP Exporter starting...";
 
     // Parse configuration
     Config config = parse_args(argc, argv);
@@ -174,12 +183,32 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "Creating DDS participant...";
     dds::Participant participant;
 
-    // Create compressed MQTT sink
-    LOG(INFO) << "Creating compressed MQTT sink...";
-    integration::CompressedMqttSink mqtt_sink(config.mqtt);
+    // Create transport (MQTT sink)
+    LOG(INFO) << "Creating MQTT transport...";
+    auto transport = std::make_unique<vep::exporter::MqttSink>(config.mqtt);
 
-    if (!mqtt_sink.start()) {
-        LOG(ERROR) << "Failed to start MQTT sink";
+    // Create compressor
+    auto comp_type = vep::exporter::compressor_type_from_string(config.compressor_type);
+    if (!comp_type) {
+        LOG(ERROR) << "Unknown compressor type: " << config.compressor_type;
+        return 1;
+    }
+    LOG(INFO) << "Creating compressor (" << vep::exporter::to_string(*comp_type) << ")...";
+    auto compressor = vep::exporter::create_compressor(*comp_type, config.compression_level);
+    if (!compressor) {
+        LOG(ERROR) << "Failed to create compressor";
+        return 1;
+    }
+
+    // Create exporter pipeline
+    LOG(INFO) << "Creating exporter pipeline...";
+    vep::exporter::ExporterPipeline pipeline(
+        std::move(transport),
+        std::move(compressor),
+        config.pipeline);
+
+    if (!pipeline.start()) {
+        LOG(ERROR) << "Failed to start exporter pipeline";
         return 1;
     }
 
@@ -187,42 +216,34 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "Creating subscription manager...";
     integration::SubscriptionManager sub_manager(participant, config.sub);
 
-    // Wire callbacks to sink
-    sub_manager.on_vss_signal([&mqtt_sink](const vep_VssSignal& msg) {
-        mqtt_sink.send(msg);
+    // Wire callbacks to pipeline
+    sub_manager.on_vss_signal([&pipeline](const vep_VssSignal& msg) {
+        pipeline.send(msg);
     });
 
-    sub_manager.on_event([&mqtt_sink](const vep_Event& msg) {
-        mqtt_sink.send(msg);
+    sub_manager.on_event([&pipeline](const vep_Event& msg) {
+        pipeline.send(msg);
     });
 
-    sub_manager.on_gauge([&mqtt_sink](const vep_OtelGauge& msg) {
-        mqtt_sink.send(msg);
+    sub_manager.on_gauge([&pipeline](const vep_OtelGauge& msg) {
+        pipeline.send(msg);
     });
 
-    sub_manager.on_counter([&mqtt_sink](const vep_OtelCounter& msg) {
-        mqtt_sink.send(msg);
+    sub_manager.on_counter([&pipeline](const vep_OtelCounter& msg) {
+        pipeline.send(msg);
     });
 
-    sub_manager.on_histogram([&mqtt_sink](const vep_OtelHistogram& msg) {
-        mqtt_sink.send(msg);
+    sub_manager.on_histogram([&pipeline](const vep_OtelHistogram& msg) {
+        pipeline.send(msg);
     });
 
-    sub_manager.on_log_entry([&mqtt_sink](const vep_OtelLogEntry& msg) {
-        mqtt_sink.send(msg);
-    });
-
-    sub_manager.on_scalar_measurement([&mqtt_sink](const vep_ScalarMeasurement& msg) {
-        mqtt_sink.send(msg);
-    });
-
-    sub_manager.on_vector_measurement([&mqtt_sink](const vep_VectorMeasurement& msg) {
-        mqtt_sink.send(msg);
+    sub_manager.on_log_entry([&pipeline](const vep_OtelLogEntry& msg) {
+        pipeline.send(msg);
     });
 
     // Start receiving
     sub_manager.start();
-    LOG(INFO) << "VDR Exporter running. Press Ctrl+C to stop.";
+    LOG(INFO) << "VEP Exporter running. Press Ctrl+C to stop.";
 
     // Main loop - periodic stats logging
     auto last_stats_time = std::chrono::steady_clock::now();
@@ -235,34 +256,32 @@ int main(int argc, char* argv[]) {
         if (now - last_stats_time >= stats_interval) {
             last_stats_time = now;
 
-            auto stats = mqtt_sink.stats();
-            auto comp_stats = mqtt_sink.compression_stats();
-
-            LOG(INFO) << "Stats: sent=" << stats.messages_sent
-                      << " failed=" << stats.messages_failed
-                      << " bytes=" << stats.bytes_sent
-                      << " batches=" << comp_stats.batches_sent
+            auto stats = pipeline.stats();
+            LOG(INFO) << "Stats: signals=" << stats.signals_processed
+                      << " events=" << stats.events_processed
+                      << " metrics=" << stats.metrics_processed
+                      << " logs=" << stats.logs_processed
+                      << " batches=" << stats.batches_sent
                       << " compression=" << std::fixed << std::setprecision(2)
-                      << (comp_stats.compression_ratio() * 100.0) << "%";
+                      << (stats.compression_ratio() * 100.0) << "%";
         }
     }
 
     // Shutdown
     LOG(INFO) << "Shutting down...";
     sub_manager.stop();
-    mqtt_sink.flush();
-    mqtt_sink.stop();
+    pipeline.stop();
 
     // Final stats
-    auto stats = mqtt_sink.stats();
-    auto comp_stats = mqtt_sink.compression_stats();
-    LOG(INFO) << "Final stats: sent=" << stats.messages_sent
-              << " failed=" << stats.messages_failed
-              << " bytes=" << stats.bytes_sent
-              << " batches=" << comp_stats.batches_sent
+    auto stats = pipeline.stats();
+    LOG(INFO) << "Final stats: signals=" << stats.signals_processed
+              << " events=" << stats.events_processed
+              << " metrics=" << stats.metrics_processed
+              << " logs=" << stats.logs_processed
+              << " batches=" << stats.batches_sent
               << " compression=" << std::fixed << std::setprecision(2)
-              << (comp_stats.compression_ratio() * 100.0) << "%";
+              << (stats.compression_ratio() * 100.0) << "%";
 
-    LOG(INFO) << "VDR Exporter stopped.";
+    LOG(INFO) << "VEP Exporter stopped.";
     return 0;
 }

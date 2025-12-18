@@ -28,13 +28,12 @@ vep-core/
 │   └── vep_avtp_probe/        # IEEE 1722 AVTP → DDS (raw frames)
 ├── bridges/                   # DDS bridges to external systems
 │   ├── common/                # Shared code (rt_transport)
+│   ├── exporter_common/       # Reusable exporter libraries
+│   │   ├── include/           # TransportSink, Compressor, BatchBuilder, WireEncoder
+│   │   └── src/
 │   ├── kuksa_dds_bridge/      # KUKSA ↔ DDS bidirectional
 │   ├── rt_dds_bridge/         # DDS ↔ RT transport
 │   └── vep_exporter/          # DDS → compressed MQTT (one-way)
-│       └── src/
-│           ├── compressed_mqtt_sink.cpp
-│           ├── dds_proto_conversion.cpp
-│           └── subscriber.cpp
 ├── tools/                     # Test/debug utilities
 │   ├── vep_mqtt_receiver/     # MQTT → decompress → display
 │   └── vep_host_metrics/      # Linux metrics → OTLP gRPC
@@ -62,10 +61,50 @@ vep-core/
 
 | Library | Purpose |
 |---------|---------|
-| `vep_exporter_lib` | Protobuf + zstd MQTT sink, DDS subscription |
+| `vep_exporter_common` | Wire encoding (DDS→Protobuf), batching, compression |
+| `vep_mqtt_sink` | MQTT transport sink (reusable for other exporters) |
+| `vep_exporter_lib` | Legacy integrated MQTT exporter |
 | `kuksa_dds_bridge_lib` | KUKSA ↔ DDS bridging logic |
 | `rt_dds_bridge_lib` | DDS ↔ RT transport bridging |
 | `transfer_proto` | Compiled transfer.proto for wire format |
+
+### Exporter Common Libraries
+
+The `exporter_common/` directory provides reusable components for building exporters:
+
+```
+bridges/exporter_common/
+├── include/
+│   ├── transport_sink.hpp   # Abstract transport interface
+│   ├── compressor.hpp       # Compression (zstd, none)
+│   ├── wire_encoder.hpp     # DDS → Protobuf conversion
+│   ├── batch_builder.hpp    # Signal/Event/Metric batching
+│   └── mqtt_sink.hpp        # MQTT transport implementation
+└── src/
+    └── *.cpp
+```
+
+**Usage for new exporter (e.g., SOME/IP):**
+```cpp
+#include "batch_builder.hpp"
+#include "compressor.hpp"
+#include "transport_sink.hpp"
+
+// Custom transport implementing TransportSink interface
+class SomeipSink : public vep::exporter::TransportSink { ... };
+
+// Reuse batching and compression
+vep::exporter::SignalBatchBuilder batcher("source_id");
+auto compressor = vep::exporter::create_compressor("zstd", 3);
+
+// On DDS signal received:
+batcher.add(signal);
+if (batcher.size() >= 100) {
+    auto batch = batcher.build();
+    auto compressed = compressor->compress(batch);
+    someip_sink->publish("signals", compressed);
+}
+```
 
 ## Dependencies
 
@@ -122,8 +161,8 @@ ctest -E "reconnect" --output-on-failure
 **Adding a new DDS message type:**
 1. Define in `components/vep-schema/ifex/`
 2. Regenerate: `cd components/vep-schema && ./generate-all.sh`
-3. Add conversion in `vep-exporter/src/dds_proto_conversion.cpp`
-4. Add to subscriber in `vep-exporter/src/subscriber.cpp`
+3. Add conversion in `bridges/vep_exporter/src/dds_proto_conversion.cpp`
+4. Add to subscriber in `bridges/vep_exporter/src/subscriber.cpp`
 
 **Modifying wire protocol:**
 1. Edit `proto/transfer.proto`

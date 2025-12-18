@@ -8,185 +8,35 @@
 /// It subscribes to MQTT topics, decompresses with zstd, decodes protobuf,
 /// and displays the data in JSON format for debugging.
 ///
+/// Uses exporter_common libraries for decompression and decoding.
+///
 /// Usage:
 ///   vep_mqtt_receiver [--broker HOST] [--port PORT] [--topic PREFIX]
 
-#include "transfer.pb.h"
+#include "compressor.hpp"
+#include "wire_decoder.hpp"
 
 #include <glog/logging.h>
 #include <mosquitto.h>
 #include <nlohmann/json.hpp>
-#include <zstd.h>
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
 
 using json = nlohmann::json;
+using namespace vep::exporter;
 
 namespace {
 
-// Forward declarations for recursive struct conversion
-json struct_value_to_json(const vep::transfer::StructValue& sv);
-json struct_field_to_json(const vep::transfer::StructField& field);
-
-json struct_value_to_json(const vep::transfer::StructValue& sv) {
-    json j;
-    j["_type"] = sv.type_name();
-    for (const auto& field : sv.fields()) {
-        j[field.name()] = struct_field_to_json(field);
-    }
-    return j;
-}
-
-json struct_field_to_json(const vep::transfer::StructField& field) {
-    switch (field.value_case()) {
-        case vep::transfer::StructField::kBoolVal:
-            return field.bool_val();
-        case vep::transfer::StructField::kInt32Val:
-            return field.int32_val();
-        case vep::transfer::StructField::kInt64Val:
-            return field.int64_val();
-        case vep::transfer::StructField::kUint32Val:
-            return field.uint32_val();
-        case vep::transfer::StructField::kUint64Val:
-            return field.uint64_val();
-        case vep::transfer::StructField::kFloatVal:
-            return field.float_val();
-        case vep::transfer::StructField::kDoubleVal:
-            return field.double_val();
-        case vep::transfer::StructField::kStringVal:
-            return field.string_val();
-        case vep::transfer::StructField::kBoolArray: {
-            json arr = json::array();
-            for (bool v : field.bool_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kInt32Array: {
-            json arr = json::array();
-            for (int32_t v : field.int32_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kInt64Array: {
-            json arr = json::array();
-            for (int64_t v : field.int64_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kFloatArray: {
-            json arr = json::array();
-            for (float v : field.float_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kDoubleArray: {
-            json arr = json::array();
-            for (double v : field.double_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kStringArray: {
-            json arr = json::array();
-            for (const auto& v : field.string_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::StructField::kStructVal:
-            return struct_value_to_json(field.struct_val());
-        case vep::transfer::StructField::kStructArray: {
-            json arr = json::array();
-            for (const auto& sv : field.struct_array().values()) {
-                arr.push_back(struct_value_to_json(sv));
-            }
-            return arr;
-        }
-        default:
-            return nullptr;
-    }
-}
-
-json signal_value_to_json(const vep::transfer::Signal& sig) {
-    switch (sig.value_case()) {
-        case vep::transfer::Signal::kBoolVal:
-            return sig.bool_val();
-        case vep::transfer::Signal::kInt32Val:
-            return sig.int32_val();
-        case vep::transfer::Signal::kInt64Val:
-            return sig.int64_val();
-        case vep::transfer::Signal::kUint32Val:
-            return sig.uint32_val();
-        case vep::transfer::Signal::kUint64Val:
-            return sig.uint64_val();
-        case vep::transfer::Signal::kFloatVal:
-            return sig.float_val();
-        case vep::transfer::Signal::kDoubleVal:
-            return sig.double_val();
-        case vep::transfer::Signal::kStringVal:
-            return sig.string_val();
-        case vep::transfer::Signal::kBoolArray: {
-            json arr = json::array();
-            for (bool v : sig.bool_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kInt32Array: {
-            json arr = json::array();
-            for (int32_t v : sig.int32_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kInt64Array: {
-            json arr = json::array();
-            for (int64_t v : sig.int64_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kUint32Array: {
-            json arr = json::array();
-            for (uint32_t v : sig.uint32_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kUint64Array: {
-            json arr = json::array();
-            for (uint64_t v : sig.uint64_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kFloatArray: {
-            json arr = json::array();
-            for (float v : sig.float_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kDoubleArray: {
-            json arr = json::array();
-            for (double v : sig.double_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kStringArray: {
-            json arr = json::array();
-            for (const auto& v : sig.string_array().values()) arr.push_back(v);
-            return arr;
-        }
-        case vep::transfer::Signal::kStructVal:
-            return struct_value_to_json(sig.struct_val());
-        case vep::transfer::Signal::kStructArray: {
-            json arr = json::array();
-            for (const auto& sv : sig.struct_array().values()) {
-                arr.push_back(struct_value_to_json(sv));
-            }
-            return arr;
-        }
-        default:
-            return nullptr;
-    }
-}
-
-std::string signal_value_to_string(const vep::transfer::Signal& sig) {
-    json j = signal_value_to_json(sig);
-    if (j.is_null()) return "(empty)";
-    if (j.is_string()) return "\"" + j.get<std::string>() + "\"";
-    return j.dump();
-}
-
 std::atomic<bool> g_running{true};
-ZSTD_DCtx* g_zstd_dctx = nullptr;
+std::unique_ptr<Decompressor> g_decompressor;
 
 void signal_handler(int sig) {
     LOG(INFO) << "Received signal " << sig << ", shutting down...";
@@ -204,6 +54,7 @@ void print_usage(const char* prog) {
               << "  --topic PREFIX    Topic prefix to subscribe (default: v1/telemetry/#)\n"
               << "  --json            Output raw JSON format\n"
               << "  --verbose         Verbose output including metadata\n"
+              << "  --no-compression  Expect uncompressed messages\n"
               << "  --help            Show this help message\n"
               << "\n"
               << "Example:\n"
@@ -217,61 +68,94 @@ struct Config {
     std::string topic_subscribe = "v1/telemetry/#";
     bool json_output = false;
     bool verbose = false;
+    CompressorType compression = CompressorType::ZSTD;
 };
 
 Config g_config;
 
-std::vector<uint8_t> decompress(const uint8_t* data, size_t size) {
-    if (!g_zstd_dctx) {
-        g_zstd_dctx = ZSTD_createDCtx();
+// =============================================================================
+// JSON Conversion Helpers
+// =============================================================================
+
+json value_to_json(const DecodedValue& value);
+
+json struct_to_json(const DecodedStruct& s) {
+    json j;
+    j["_type"] = s.type_name;
+    for (const auto& field : s.fields) {
+        j[field.name] = value_to_json(field.value);
     }
-
-    // Get decompressed size (stored in frame header)
-    unsigned long long decompressed_size = ZSTD_getFrameContentSize(data, size);
-    if (decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN) {
-        // Use a reasonable default if size is unknown
-        decompressed_size = size * 10;
-    } else if (decompressed_size == ZSTD_CONTENTSIZE_ERROR) {
-        LOG(ERROR) << "Invalid zstd frame";
-        return {};
-    }
-
-    std::vector<uint8_t> decompressed(decompressed_size);
-    size_t result = ZSTD_decompressDCtx(g_zstd_dctx,
-                                         decompressed.data(), decompressed.size(),
-                                         data, size);
-
-    if (ZSTD_isError(result)) {
-        LOG(ERROR) << "Decompression failed: " << ZSTD_getErrorName(result);
-        return {};
-    }
-
-    decompressed.resize(result);
-    return decompressed;
+    return j;
 }
 
-std::string quality_to_string(vep::transfer::Quality q) {
-    switch (q) {
-        case vep::transfer::QUALITY_VALID: return "VALID";
-        case vep::transfer::QUALITY_INVALID: return "INVALID";
-        case vep::transfer::QUALITY_NOT_AVAILABLE: return "NOT_AVAILABLE";
+json value_to_json(const DecodedValue& value) {
+    return std::visit([](auto&& v) -> json {
+        using T = std::decay_t<decltype(v)>;
+
+        if constexpr (std::is_same_v<T, std::monostate>) {
+            return nullptr;
+        } else if constexpr (std::is_same_v<T, bool>) {
+            return v;
+        } else if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> ||
+                             std::is_same_v<T, int32_t> || std::is_same_v<T, int64_t>) {
+            return v;
+        } else if constexpr (std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> ||
+                             std::is_same_v<T, uint32_t> || std::is_same_v<T, uint64_t>) {
+            return v;
+        } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
+            return v;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return v;
+        } else if constexpr (std::is_same_v<T, std::vector<bool>>) {
+            json arr = json::array();
+            for (bool b : v) arr.push_back(b);
+            return arr;
+        } else if constexpr (std::is_same_v<T, std::vector<int8_t>> ||
+                             std::is_same_v<T, std::vector<int16_t>> ||
+                             std::is_same_v<T, std::vector<int32_t>> ||
+                             std::is_same_v<T, std::vector<int64_t>> ||
+                             std::is_same_v<T, std::vector<uint8_t>> ||
+                             std::is_same_v<T, std::vector<uint16_t>> ||
+                             std::is_same_v<T, std::vector<uint32_t>> ||
+                             std::is_same_v<T, std::vector<uint64_t>> ||
+                             std::is_same_v<T, std::vector<float>> ||
+                             std::is_same_v<T, std::vector<double>>) {
+            json arr = json::array();
+            for (const auto& x : v) arr.push_back(x);
+            return arr;
+        } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+            json arr = json::array();
+            for (const auto& s : v) arr.push_back(s);
+            return arr;
+        } else if constexpr (std::is_same_v<T, DecodedStruct>) {
+            return struct_to_json(v);
+        } else if constexpr (std::is_same_v<T, std::vector<DecodedStruct>>) {
+            json arr = json::array();
+            for (const auto& s : v) arr.push_back(struct_to_json(s));
+            return arr;
+        } else {
+            return nullptr;
+        }
+    }, value);
+}
+
+const char* severity_to_string(int32_t severity) {
+    switch (severity) {
+        case 0: return "INFO";
+        case 1: return "WARNING";
+        case 2: return "ERROR";
+        case 3: return "CRITICAL";
         default: return "UNKNOWN";
     }
 }
 
-std::string severity_to_string(vep::transfer::Severity s) {
-    switch (s) {
-        case vep::transfer::SEVERITY_INFO: return "INFO";
-        case vep::transfer::SEVERITY_WARNING: return "WARNING";
-        case vep::transfer::SEVERITY_ERROR: return "ERROR";
-        case vep::transfer::SEVERITY_CRITICAL: return "CRITICAL";
-        default: return "UNKNOWN";
-    }
-}
+// =============================================================================
+// Batch Processing
+// =============================================================================
 
 void process_signal_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::SignalBatch batch;
-    if (!batch.ParseFromArray(data.data(), data.size())) {
+    auto batch = decode_signal_batch(data);
+    if (!batch) {
         LOG(ERROR) << "Failed to parse SignalBatch";
         return;
     }
@@ -282,57 +166,49 @@ void process_signal_batch(const std::vector<uint8_t>& data) {
         now.time_since_epoch()).count();
 
     // Calculate min/max timestamps in batch
-    uint64_t min_ts = UINT64_MAX;
-    uint64_t max_ts = 0;
-    for (const auto& sig : batch.signals()) {
-        uint64_t ts = batch.base_timestamp_ms() + sig.timestamp_delta_ms();
-        if (ts < min_ts) min_ts = ts;
-        if (ts > max_ts) max_ts = ts;
+    int64_t min_ts = INT64_MAX;
+    int64_t max_ts = 0;
+    for (const auto& sig : batch->signals) {
+        if (sig.timestamp_ms < min_ts) min_ts = sig.timestamp_ms;
+        if (sig.timestamp_ms > max_ts) max_ts = sig.timestamp_ms;
     }
 
     if (g_config.json_output) {
         json j;
         j["type"] = "signal_batch";
-        j["source_id"] = batch.source_id();
-        j["sequence"] = batch.sequence();
-        j["base_timestamp_ms"] = batch.base_timestamp_ms();
+        j["source_id"] = batch->source_id;
+        j["sequence"] = batch->sequence;
+        j["base_timestamp_ms"] = batch->base_timestamp_ms;
         j["received_at_ms"] = now_ms;
-        j["first_signal_delay_ms"] = static_cast<int64_t>(now_ms - min_ts);
-        j["last_signal_delay_ms"] = static_cast<int64_t>(now_ms - max_ts);
+        j["first_signal_delay_ms"] = static_cast<int64_t>(now_ms) - min_ts;
+        j["last_signal_delay_ms"] = static_cast<int64_t>(now_ms) - max_ts;
         j["signals"] = json::array();
 
-        for (const auto& sig : batch.signals()) {
+        for (const auto& sig : batch->signals) {
             json js;
-            if (sig.has_path()) {
-                js["path"] = sig.path();
-            } else {
-                js["path_id"] = sig.path_id();
-            }
-            js["timestamp_ms"] = batch.base_timestamp_ms() + sig.timestamp_delta_ms();
-            js["quality"] = quality_to_string(sig.quality());
-            js["value"] = signal_value_to_json(sig);
-
+            js["path"] = sig.path;
+            js["timestamp_ms"] = sig.timestamp_ms;
+            js["quality"] = quality_to_string(sig.quality);
+            js["value"] = value_to_json(sig.value);
             j["signals"].push_back(js);
         }
 
         std::cout << j.dump(2) << "\n";
     } else {
-        std::cout << "\n=== Signal Batch [" << batch.base_timestamp_ms() << " ms] ===\n";
-        std::cout << "Source: " << batch.source_id()
-                  << " | Seq: " << batch.sequence()
-                  << " | Signals: " << batch.signals_size()
+        std::cout << "\n=== Signal Batch [" << batch->base_timestamp_ms << " ms] ===\n";
+        std::cout << "Source: " << batch->source_id
+                  << " | Seq: " << batch->sequence
+                  << " | Signals: " << batch->signals.size()
                   << " | Span: " << (max_ts - min_ts) << " ms\n";
-        std::cout << "Delay: first=" << (now_ms - min_ts) << " ms"
-                  << ", last=" << (now_ms - max_ts) << " ms\n";
+        std::cout << "Delay: first=" << (static_cast<int64_t>(now_ms) - min_ts) << " ms"
+                  << ", last=" << (static_cast<int64_t>(now_ms) - max_ts) << " ms\n";
 
-        for (const auto& sig : batch.signals()) {
-            std::string path = sig.has_path() ? sig.path() : ("path_id:" + std::to_string(sig.path_id()));
-            uint64_t ts = batch.base_timestamp_ms() + sig.timestamp_delta_ms();
+        for (const auto& sig : batch->signals) {
+            std::cout << "  [" << sig.timestamp_ms << "] " << sig.path
+                      << " = " << value_to_string(sig.value);
 
-            std::cout << "  [" << ts << "] " << path << " = " << signal_value_to_string(sig);
-
-            if (sig.quality() != vep::transfer::QUALITY_VALID) {
-                std::cout << " [" << quality_to_string(sig.quality()) << "]";
+            if (sig.quality != DecodedQuality::VALID) {
+                std::cout << " [" << quality_to_string(sig.quality) << "]";
             }
             std::cout << "\n";
         }
@@ -340,8 +216,8 @@ void process_signal_batch(const std::vector<uint8_t>& data) {
 }
 
 void process_event_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::EventBatch batch;
-    if (!batch.ParseFromArray(data.data(), data.size())) {
+    auto batch = decode_event_batch(data);
+    if (!batch) {
         LOG(ERROR) << "Failed to parse EventBatch";
         return;
     }
@@ -349,19 +225,19 @@ void process_event_batch(const std::vector<uint8_t>& data) {
     if (g_config.json_output) {
         json j;
         j["type"] = "event_batch";
-        j["source_id"] = batch.source_id();
-        j["sequence"] = batch.sequence();
+        j["source_id"] = batch->source_id;
+        j["sequence"] = batch->sequence;
         j["events"] = json::array();
 
-        for (const auto& evt : batch.events()) {
+        for (const auto& evt : batch->events) {
             json je;
-            je["event_id"] = evt.event_id();
-            je["timestamp_ms"] = batch.base_timestamp_ms() + evt.timestamp_delta_ms();
-            je["category"] = evt.category();
-            je["event_type"] = evt.event_type();
-            je["severity"] = severity_to_string(evt.severity());
-            if (!evt.payload().empty()) {
-                je["payload_size"] = evt.payload().size();
+            je["event_id"] = evt.event_id;
+            je["timestamp_ms"] = evt.timestamp_ms;
+            je["category"] = evt.category;
+            je["event_type"] = evt.event_type;
+            je["severity"] = severity_to_string(evt.severity);
+            if (!evt.attributes.empty()) {
+                je["attributes"] = evt.attributes;
             }
             j["events"].push_back(je);
         }
@@ -370,21 +246,21 @@ void process_event_batch(const std::vector<uint8_t>& data) {
     } else {
         std::cout << "\n=== Event Batch ===\n";
         if (g_config.verbose) {
-            std::cout << "Source: " << batch.source_id()
-                      << " | Seq: " << batch.sequence() << "\n";
+            std::cout << "Source: " << batch->source_id
+                      << " | Seq: " << batch->sequence << "\n";
         }
 
-        for (const auto& evt : batch.events()) {
-            std::cout << "  [" << severity_to_string(evt.severity()) << "] "
-                      << evt.category() << "/" << evt.event_type()
-                      << " (" << evt.event_id() << ")\n";
+        for (const auto& evt : batch->events) {
+            std::cout << "  [" << severity_to_string(evt.severity) << "] "
+                      << evt.category << "/" << evt.event_type
+                      << " (" << evt.event_id << ")\n";
         }
     }
 }
 
 void process_metrics_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::MetricsBatch batch;
-    if (!batch.ParseFromArray(data.data(), data.size())) {
+    auto batch = decode_metrics_batch(data);
+    if (!batch) {
         LOG(ERROR) << "Failed to parse MetricsBatch";
         return;
     }
@@ -392,80 +268,62 @@ void process_metrics_batch(const std::vector<uint8_t>& data) {
     if (g_config.json_output) {
         json j;
         j["type"] = "metrics_batch";
-        j["source_id"] = batch.source_id();
-        j["sequence"] = batch.sequence();
+        j["source_id"] = batch->source_id;
+        j["sequence"] = batch->sequence;
         j["metrics"] = json::array();
 
-        for (const auto& m : batch.metrics()) {
+        for (const auto& m : batch->metrics) {
             json jm;
-            jm["name"] = m.name();
-            if (m.has_gauge()) {
-                jm["type"] = "gauge";
-                jm["value"] = m.gauge();
-            } else if (m.has_counter()) {
-                jm["type"] = "counter";
-                jm["value"] = m.counter();
-            } else if (m.has_histogram()) {
-                jm["type"] = "histogram";
-                jm["sample_count"] = m.histogram().sample_count();
-                jm["sample_sum"] = m.histogram().sample_sum();
+            jm["name"] = m.name;
+            jm["type"] = metric_type_to_string(m.type);
+            jm["value"] = m.value;
+
+            if (m.type == MetricType::HISTOGRAM) {
+                jm["sample_count"] = m.sample_count;
+                jm["sample_sum"] = m.sample_sum;
             }
-            // Add labels
-            if (m.label_keys_size() > 0) {
-                json labels = json::object();
-                for (int i = 0; i < m.label_keys_size() && i < m.label_values_size(); ++i) {
-                    labels[m.label_keys(i)] = m.label_values(i);
-                }
-                jm["labels"] = labels;
+
+            if (!m.labels.empty()) {
+                jm["labels"] = m.labels;
             }
             j["metrics"].push_back(jm);
         }
 
         std::cout << j.dump(2) << "\n";
     } else {
-        std::cout << "\n=== Metrics Batch [" << batch.source_id() << "] ===\n";
+        std::cout << "\n=== Metrics Batch [" << batch->source_id << "] ===\n";
         if (g_config.verbose) {
-            std::cout << "Seq: " << batch.sequence() << "\n";
+            std::cout << "Seq: " << batch->sequence << "\n";
         }
 
-        for (const auto& m : batch.metrics()) {
+        for (const auto& m : batch->metrics) {
             // Build labels string
             std::string labels;
-            if (m.label_keys_size() > 0) {
+            if (!m.labels.empty()) {
                 labels = "{";
-                for (int i = 0; i < m.label_keys_size() && i < m.label_values_size(); ++i) {
-                    if (i > 0) labels += ",";
-                    labels += m.label_keys(i) + "=" + m.label_values(i);
+                bool first = true;
+                for (const auto& [k, v] : m.labels) {
+                    if (!first) labels += ",";
+                    labels += k + "=" + v;
+                    first = false;
                 }
                 labels += "}";
             }
 
-            if (m.has_gauge()) {
-                std::cout << "  [GAUGE] " << m.name() << labels << " = " << m.gauge() << "\n";
-            } else if (m.has_counter()) {
-                std::cout << "  [COUNTER] " << m.name() << labels << " = " << m.counter() << "\n";
-            } else if (m.has_histogram()) {
-                std::cout << "  [HISTOGRAM] " << m.name() << labels
-                          << " count=" << m.histogram().sample_count()
-                          << " sum=" << m.histogram().sample_sum() << "\n";
+            std::cout << "  [" << metric_type_to_string(m.type) << "] "
+                      << m.name << labels << " = " << m.value;
+
+            if (m.type == MetricType::HISTOGRAM) {
+                std::cout << " (count=" << m.sample_count << " sum=" << m.sample_sum << ")";
             }
+            std::cout << "\n";
         }
     }
 }
 
-std::string log_level_to_string(vep::transfer::LogLevel level) {
-    switch (level) {
-        case vep::transfer::LOG_LEVEL_DEBUG: return "DEBUG";
-        case vep::transfer::LOG_LEVEL_INFO: return "INFO";
-        case vep::transfer::LOG_LEVEL_WARN: return "WARN";
-        case vep::transfer::LOG_LEVEL_ERROR: return "ERROR";
-        default: return "UNKNOWN";
-    }
-}
-
 void process_log_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::LogBatch batch;
-    if (!batch.ParseFromArray(data.data(), data.size())) {
+    auto batch = decode_log_batch(data);
+    if (!batch) {
         LOG(ERROR) << "Failed to parse LogBatch";
         return;
     }
@@ -473,23 +331,25 @@ void process_log_batch(const std::vector<uint8_t>& data) {
     if (g_config.json_output) {
         json j;
         j["type"] = "log_batch";
-        j["source_id"] = batch.source_id();
-        j["sequence"] = batch.sequence();
+        j["source_id"] = batch->source_id;
+        j["sequence"] = batch->sequence;
         j["logs"] = json::array();
 
-        for (const auto& log : batch.logs()) {
+        for (const auto& log : batch->entries) {
             json jl;
-            jl["timestamp_ms"] = batch.base_timestamp_ms() + log.timestamp_delta_ms();
-            jl["level"] = log_level_to_string(log.level());
-            jl["component"] = log.component();
-            jl["message"] = log.message();
+            jl["timestamp_ms"] = log.timestamp_ms;
+            jl["level"] = log_level_to_string(log.level);
+            jl["component"] = log.component;
+            jl["message"] = log.message;
 
-            if (log.attr_keys_size() > 0) {
-                json attrs = json::object();
-                for (int i = 0; i < log.attr_keys_size() && i < log.attr_values_size(); ++i) {
-                    attrs[log.attr_keys(i)] = log.attr_values(i);
-                }
-                jl["attributes"] = attrs;
+            if (!log.attributes.empty()) {
+                jl["attributes"] = log.attributes;
+            }
+            if (!log.trace_id.empty()) {
+                jl["trace_id"] = log.trace_id;
+            }
+            if (!log.span_id.empty()) {
+                jl["span_id"] = log.span_id;
             }
             j["logs"].push_back(jl);
         }
@@ -498,34 +358,51 @@ void process_log_batch(const std::vector<uint8_t>& data) {
     } else {
         std::cout << "\n=== Log Batch ===\n";
         if (g_config.verbose) {
-            std::cout << "Source: " << batch.source_id()
-                      << " | Seq: " << batch.sequence() << "\n";
+            std::cout << "Source: " << batch->source_id
+                      << " | Seq: " << batch->sequence << "\n";
         }
 
-        for (const auto& log : batch.logs()) {
-            uint64_t ts = batch.base_timestamp_ms() + log.timestamp_delta_ms();
-            std::cout << "  [" << ts << "] [" << log_level_to_string(log.level()) << "] "
-                      << log.component() << ": " << log.message() << "\n";
+        for (const auto& log : batch->entries) {
+            std::cout << "  [" << log.timestamp_ms << "] ["
+                      << log_level_to_string(log.level) << "] "
+                      << log.component << ": " << log.message << "\n";
         }
     }
 }
+
+// =============================================================================
+// MQTT Callbacks
+// =============================================================================
 
 void on_message(struct mosquitto* /*mosq*/, void* /*obj*/,
                 const struct mosquitto_message* msg) {
     std::string topic(msg->topic);
 
     LOG(INFO) << "Received message on " << topic
-              << " (" << msg->payloadlen << " bytes compressed)";
+              << " (" << msg->payloadlen << " bytes"
+              << (g_config.compression == CompressorType::ZSTD ? " compressed" : "") << ")";
 
-    // Decompress
-    auto decompressed = decompress(static_cast<uint8_t*>(msg->payload), msg->payloadlen);
-    if (decompressed.empty()) {
-        return;
+    // Decompress if needed
+    std::vector<uint8_t> decompressed;
+    if (g_config.compression == CompressorType::ZSTD) {
+        std::vector<uint8_t> compressed(
+            static_cast<uint8_t*>(msg->payload),
+            static_cast<uint8_t*>(msg->payload) + msg->payloadlen);
+
+        decompressed = g_decompressor->decompress(compressed);
+        if (decompressed.empty() && msg->payloadlen > 0) {
+            LOG(ERROR) << "Decompression failed";
+            return;
+        }
+
+        LOG(INFO) << "Decompressed to " << decompressed.size() << " bytes ("
+                  << std::fixed << std::setprecision(1)
+                  << (100.0 * msg->payloadlen / decompressed.size()) << "% of original)";
+    } else {
+        decompressed.assign(
+            static_cast<uint8_t*>(msg->payload),
+            static_cast<uint8_t*>(msg->payload) + msg->payloadlen);
     }
-
-    LOG(INFO) << "Decompressed to " << decompressed.size() << " bytes ("
-              << std::fixed << std::setprecision(1)
-              << (100.0 * msg->payloadlen / decompressed.size()) << "% of original)";
 
     // Determine type from topic
     if (topic.find("/signals") != std::string::npos) {
@@ -576,6 +453,8 @@ Config parse_args(int argc, char* argv[]) {
             config.json_output = true;
         } else if (arg == "--verbose") {
             config.verbose = true;
+        } else if (arg == "--no-compression") {
+            config.compression = CompressorType::NONE;
         } else {
             LOG(WARNING) << "Unknown argument: " << arg;
         }
@@ -598,6 +477,14 @@ int main(int argc, char* argv[]) {
     g_config = parse_args(argc, argv);
     LOG(INFO) << "MQTT Broker: " << g_config.broker_host << ":" << g_config.broker_port;
     LOG(INFO) << "Subscribe topic: " << g_config.topic_subscribe;
+    LOG(INFO) << "Compression: " << to_string(g_config.compression);
+
+    // Create decompressor
+    g_decompressor = create_decompressor(g_config.compression);
+    if (!g_decompressor) {
+        LOG(ERROR) << "Failed to create decompressor";
+        return 1;
+    }
 
     // Setup signal handlers
     std::signal(SIGINT, signal_handler);
@@ -657,13 +544,22 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     LOG(INFO) << "Shutting down...";
+
+    // Log decompression stats
+    auto stats = g_decompressor->stats();
+    if (stats.operations > 0) {
+        LOG(INFO) << "Decompression stats: " << stats.operations << " operations, "
+                  << stats.bytes_before << " bytes in, " << stats.bytes_after << " bytes out "
+                  << "(expansion ratio: " << std::fixed << std::setprecision(2)
+                  << stats.ratio() << "x)";
+        if (stats.errors > 0) {
+            LOG(WARNING) << "Decompression errors: " << stats.errors;
+        }
+    }
+
     mosquitto_disconnect(mosq);
     mosquitto_destroy(mosq);
     mosquitto_lib_cleanup();
-
-    if (g_zstd_dctx) {
-        ZSTD_freeDCtx(g_zstd_dctx);
-    }
 
     LOG(INFO) << "VEP MQTT Receiver stopped.";
     return 0;
