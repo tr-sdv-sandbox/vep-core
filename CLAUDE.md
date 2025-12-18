@@ -61,27 +61,33 @@ vep-core/
 
 | Library | Purpose |
 |---------|---------|
-| `vep_exporter_common` | Wire encoding (DDS→Protobuf), batching, compression |
-| `vep_mqtt_sink` | MQTT transport sink (reusable for other exporters) |
-| `vep_exporter_lib` | Legacy integrated MQTT exporter |
+| `vep_exporter_common` | Wire encoding/decoding, batching, compression, DDS subscriber |
+| `vep_mqtt_sink` | MQTT transport sink |
 | `kuksa_dds_bridge_lib` | KUKSA ↔ DDS bridging logic |
 | `rt_dds_bridge_lib` | DDS ↔ RT transport bridging |
 | `transfer_proto` | Compiled transfer.proto for wire format |
 
 ### Exporter Common Libraries
 
-The `exporter_common/` directory provides reusable components for building exporters:
+The `exporter_common/` directory provides reusable components for building exporters and receivers:
 
 ```
 bridges/exporter_common/
 ├── include/
-│   ├── transport_sink.hpp   # Abstract transport interface
-│   ├── compressor.hpp       # Compression (zstd, none)
-│   ├── wire_encoder.hpp     # DDS → Protobuf conversion
-│   ├── batch_builder.hpp    # Signal/Event/Metric batching
-│   └── mqtt_sink.hpp        # MQTT transport implementation
-└── src/
-    └── *.cpp
+│   ├── transport_sink.hpp     # Abstract transport interface
+│   ├── compressor.hpp         # Compressor + Decompressor (zstd, none)
+│   ├── wire_encoder.hpp       # DDS → Protobuf conversion
+│   ├── wire_decoder.hpp       # Protobuf → C++ types (for receivers/testing)
+│   ├── batch_builder.hpp      # Signal/Event/Metric/Log batching
+│   ├── exporter_pipeline.hpp  # Orchestrates batching, compression, transport
+│   ├── subscriber.hpp         # DDS subscription manager
+│   └── mqtt_sink.hpp          # MQTT transport implementation
+├── src/
+│   └── *.cpp
+└── tests/
+    ├── compressor_test.cpp    # 31 tests (compress/decompress round-trips)
+    ├── batch_builder_test.cpp # Batch builder tests
+    └── wire_codec_test.cpp    # Wire encode/decode round-trip tests
 ```
 
 **Usage for new exporter (e.g., SOME/IP):**
@@ -90,12 +96,14 @@ bridges/exporter_common/
 #include "compressor.hpp"
 #include "transport_sink.hpp"
 
+using namespace vep::exporter;
+
 // Custom transport implementing TransportSink interface
-class SomeipSink : public vep::exporter::TransportSink { ... };
+class SomeipSink : public TransportSink { ... };
 
 // Reuse batching and compression
-vep::exporter::SignalBatchBuilder batcher("source_id");
-auto compressor = vep::exporter::create_compressor("zstd", 3);
+SignalBatchBuilder batcher("source_id");
+auto compressor = create_compressor(CompressorType::ZSTD, 3);
 
 // On DDS signal received:
 batcher.add(signal);
@@ -103,6 +111,25 @@ if (batcher.size() >= 100) {
     auto batch = batcher.build();
     auto compressed = compressor->compress(batch);
     someip_sink->publish("signals", compressed);
+}
+```
+
+**Usage for receiver:**
+```cpp
+#include "compressor.hpp"
+#include "wire_decoder.hpp"
+
+using namespace vep::exporter;
+
+auto decompressor = create_decompressor(CompressorType::ZSTD);
+
+// On message received:
+auto decompressed = decompressor->decompress(compressed_data);
+auto batch = decode_signal_batch(decompressed);
+if (batch) {
+    for (const auto& sig : batch->signals) {
+        std::cout << sig.path << " = " << value_to_string(sig.value) << "\n";
+    }
 }
 ```
 
@@ -143,12 +170,25 @@ See `proto/transfer.proto` for message definitions.
 # Run all vep-core tests
 cd build/vep-core && ctest --output-on-failure
 
+# Run exporter_common unit tests only
+ctest -R "exporter_common" --output-on-failure
+
 # Integration tests (may require Docker for KUKSA)
 ctest -L integration --output-on-failure
 
 # Skip Docker-dependent tests
 ctest -E "reconnect" --output-on-failure
 ```
+
+### Unit Test Coverage
+
+The `exporter_common` library has comprehensive unit tests:
+
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| `compressor_test` | 31 | Compressor/Decompressor init, round-trips, stats, error handling |
+| `batch_builder_test` | ~20 | All batch builders, thread safety, protobuf output |
+| `wire_codec_test` | ~15 | Encode/decode round-trips for all message types |
 
 ## Common Tasks
 
@@ -161,10 +201,12 @@ ctest -E "reconnect" --output-on-failure
 **Adding a new DDS message type:**
 1. Define in `components/vep-schema/ifex/`
 2. Regenerate: `cd components/vep-schema && ./generate-all.sh`
-3. Add conversion in `bridges/vep_exporter/src/dds_proto_conversion.cpp`
-4. Add to subscriber in `bridges/vep_exporter/src/subscriber.cpp`
+3. Add encoder in `bridges/exporter_common/src/wire_encoder.cpp`
+4. Add decoder in `bridges/exporter_common/src/wire_decoder.cpp`
+5. Add to subscriber in `bridges/exporter_common/src/subscriber.cpp`
 
 **Modifying wire protocol:**
 1. Edit `proto/transfer.proto`
 2. Rebuild (CMake regenerates automatically)
-3. Update `vep_mqtt_receiver` decoder if needed
+3. Update wire_encoder.cpp and wire_decoder.cpp
+4. Update tests in `bridges/exporter_common/tests/`
