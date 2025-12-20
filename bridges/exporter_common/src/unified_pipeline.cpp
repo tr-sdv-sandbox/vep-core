@@ -8,7 +8,7 @@
 namespace vep::exporter {
 
 UnifiedExporterPipeline::UnifiedExporterPipeline(
-    std::unique_ptr<TransportSink> transport,
+    std::unique_ptr<vep::BackendTransport> transport,
     std::unique_ptr<Compressor> compressor,
     const UnifiedPipelineConfig& config)
     : config_(config)
@@ -104,7 +104,7 @@ void UnifiedExporterPipeline::do_flush() {
         stats_.batches_sent++;
     }
 
-    bool success = transport_->publish(config_.topic, compressed);
+    bool success = transport_->publish(config_.content_id, compressed);
     if (!success) {
         LOG(WARNING) << "UnifiedExporterPipeline: Failed to publish batch";
     }

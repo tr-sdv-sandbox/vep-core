@@ -15,7 +15,7 @@
 
 #include "common/dds_wrapper.hpp"
 #include "unified_pipeline.hpp"
-#include "mqtt_sink.hpp"
+#include "vep/mqtt_backend_transport.hpp"
 #include "compressor.hpp"
 #include "subscriber.hpp"
 
@@ -47,7 +47,8 @@ void print_usage(const char* prog) {
               << "  --broker HOST     MQTT broker host (default: localhost)\n"
               << "  --port PORT       MQTT broker port (default: 1883)\n"
               << "  --client-id ID    MQTT client ID (default: vep_exporter)\n"
-              << "  --topic TOPIC     MQTT topic (default: telemetry)\n"
+              << "  --vehicle-id ID   Vehicle identifier for topic routing (required)\n"
+              << "  --content-id N    Content ID for message routing (default: 1)\n"
               << "  --batch-size N    Max items per batch (default: 100)\n"
               << "  --batch-timeout MS  Batch timeout in ms (default: 1000)\n"
               << "  --compression N   Zstd compression level 1-19 (default: 3)\n"
@@ -55,12 +56,12 @@ void print_usage(const char* prog) {
               << "  --help            Show this help message\n"
               << "\n"
               << "Example:\n"
-              << "  " << prog << " --broker 192.168.1.100 --port 1883\n"
+              << "  " << prog << " --broker 192.168.1.100 --vehicle-id VIN123\n"
               << "\n";
 }
 
 struct Config {
-    vep::exporter::MqttConfig mqtt;
+    vep::MqttBackendTransportConfig mqtt;
     vep::exporter::UnifiedPipelineConfig pipeline;
     integration::SubscriptionConfig sub;
     std::string compressor_type = "zstd";
@@ -88,7 +89,7 @@ Config parse_args(int argc, char* argv[]) {
                     if (mqtt["client_id"]) config.mqtt.client_id = mqtt["client_id"].as<std::string>();
                     if (mqtt["username"]) config.mqtt.username = mqtt["username"].as<std::string>();
                     if (mqtt["password"]) config.mqtt.password = mqtt["password"].as<std::string>();
-                    if (mqtt["topic_prefix"]) config.mqtt.topic_prefix = mqtt["topic_prefix"].as<std::string>();
+                    if (mqtt["vehicle_id"]) config.mqtt.vehicle_id = mqtt["vehicle_id"].as<std::string>();
                     if (mqtt["qos"]) config.mqtt.qos = mqtt["qos"].as<int>();
                 }
 
@@ -99,7 +100,7 @@ Config parse_args(int argc, char* argv[]) {
                     if (batch["timeout_ms"]) {
                         config.pipeline.batch_timeout = std::chrono::milliseconds(batch["timeout_ms"].as<int>());
                     }
-                    if (batch["topic"]) config.pipeline.topic = batch["topic"].as<std::string>();
+                    if (batch["content_id"]) config.pipeline.content_id = batch["content_id"].as<uint32_t>();
                 }
 
                 if (yaml["compression"]) {
@@ -129,8 +130,10 @@ Config parse_args(int argc, char* argv[]) {
             config.mqtt.broker_port = std::stoi(argv[++i]);
         } else if (arg == "--client-id" && i + 1 < argc) {
             config.mqtt.client_id = argv[++i];
-        } else if (arg == "--topic" && i + 1 < argc) {
-            config.pipeline.topic = argv[++i];
+        } else if (arg == "--vehicle-id" && i + 1 < argc) {
+            config.mqtt.vehicle_id = argv[++i];
+        } else if (arg == "--content-id" && i + 1 < argc) {
+            config.pipeline.content_id = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--batch-size" && i + 1 < argc) {
             config.pipeline.batch_max_items = std::stoul(argv[++i]);
         } else if (arg == "--batch-timeout" && i + 1 < argc) {
@@ -151,7 +154,8 @@ void log_config(const Config& config) {
     LOG(INFO) << "=== VEP Exporter Configuration ===";
     LOG(INFO) << "MQTT Broker: " << config.mqtt.broker_host << ":" << config.mqtt.broker_port;
     LOG(INFO) << "Client ID: " << config.mqtt.client_id;
-    LOG(INFO) << "Topic: " << config.pipeline.topic;
+    LOG(INFO) << "Vehicle ID: " << config.mqtt.vehicle_id;
+    LOG(INFO) << "Content ID: " << config.pipeline.content_id;
     LOG(INFO) << "Batching: " << config.pipeline.batch_max_items << " items, "
               << config.pipeline.batch_timeout.count() << "ms timeout";
     LOG(INFO) << "Compression: " << config.compressor_type
@@ -186,9 +190,9 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "Creating DDS participant...";
     dds::Participant participant;
 
-    // Create transport (MQTT sink)
+    // Create transport (MQTT backend)
     LOG(INFO) << "Creating MQTT transport...";
-    auto transport = std::make_unique<vep::exporter::MqttSink>(config.mqtt);
+    auto transport = std::make_unique<vep::MqttBackendTransport>(config.mqtt);
 
     // Create compressor
     auto comp_type = vep::exporter::compressor_type_from_string(config.compressor_type);

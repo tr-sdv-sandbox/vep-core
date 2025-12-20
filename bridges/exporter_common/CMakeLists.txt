@@ -1,14 +1,16 @@
 # exporter_common - Reusable exporter libraries
 #
 # Provides:
-#   - vep_exporter_common: Core encoding/batching/compression (no transport)
-#   - vep_mqtt_sink: MQTT transport implementation
+#   - vep_exporter_common: Core encoding/batching/compression/pipeline
+#
+# Transport implementations are in libs/backend_transport:
+#   - vep_mqtt_backend_transport: MQTT transport
 #
 # Usage:
-#   target_link_libraries(my_exporter PRIVATE vep_exporter_common vep_mqtt_sink)
+#   target_link_libraries(my_exporter PRIVATE vep_exporter_common vep_mqtt_backend_transport)
 
 # ============================================================================
-# Core library (encoding, batching, compression - transport agnostic)
+# Core library (encoding, batching, compression, pipeline - transport agnostic)
 # ============================================================================
 
 add_library(vep_exporter_common STATIC
@@ -27,30 +29,12 @@ target_include_directories(vep_exporter_common PUBLIC
 )
 
 target_link_libraries(vep_exporter_common PUBLIC
-    vep_dds_common     # DDS wrappers (for SubscriptionManager)
-    vep_idl            # DDS IDL types
-    transfer_proto     # Protobuf wire format
+    vep_backend_transport  # BackendTransport interface
+    vep_dds_common         # DDS wrappers (for SubscriptionManager)
+    vep_idl                # DDS IDL types
+    transfer_proto         # Protobuf wire format
     glog::glog
     ${ZSTD_LIBRARIES}
-)
-
-# ============================================================================
-# MQTT transport sink
-# ============================================================================
-
-add_library(vep_mqtt_sink STATIC
-    src/mqtt_sink.cpp
-)
-
-target_include_directories(vep_mqtt_sink PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${MOSQUITTO_INCLUDE_DIRS}
-)
-
-target_link_libraries(vep_mqtt_sink PUBLIC
-    vep_exporter_common
-    glog::glog
-    ${MOSQUITTO_LIBRARIES}
 )
 
 # ============================================================================

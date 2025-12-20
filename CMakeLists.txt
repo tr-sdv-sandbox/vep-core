@@ -137,6 +137,12 @@ if(TARGET absl::log_internal_check_op)
 endif()
 
 # ============================================================================
+# Backend Transport Library (generic bidirectional transport abstraction)
+# ============================================================================
+
+add_subdirectory(libs/backend_transport)
+
+# ============================================================================
 # Exporter Common Libraries (reusable across MQTT, SOME/IP, etc.)
 # ============================================================================
 
@@ -152,8 +158,8 @@ add_executable(vep_exporter
 )
 
 target_link_libraries(vep_exporter PRIVATE
-    vep_exporter_common  # Encoding, batching, compression, pipeline, subscriber
-    vep_mqtt_sink        # MQTT transport
+    vep_exporter_common        # Encoding, batching, compression, pipeline, subscriber
+    vep_mqtt_backend_transport # MQTT backend transport
     yaml-cpp::yaml-cpp
     glog::glog
 )

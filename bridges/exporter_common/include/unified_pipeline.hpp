@@ -14,11 +14,11 @@
 /// (e.g., SOME/IP with BE Message Proxy).
 ///
 /// Data flow:
-///   DDS messages → UnifiedBatchBuilder → compress → TransportSink
+///   DDS messages → UnifiedBatchBuilder → compress → BackendTransport
 
 #include "batch_builder.hpp"
 #include "compressor.hpp"
-#include "transport_sink.hpp"
+#include "vep/backend_transport.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -43,8 +43,9 @@ struct UnifiedPipelineConfig {
     // Flush timeout - send batch even if not full
     std::chrono::milliseconds batch_timeout{1000};
 
-    // Topic name for transport (used by MQTT sink, ignored by SOME/IP sink)
-    std::string topic = "telemetry";
+    // Content ID for transport routing
+    // Each application has a unique content_id assigned by the platform
+    uint32_t content_id = 1;
 };
 
 /// Statistics for the unified exporter pipeline
@@ -87,11 +88,11 @@ struct UnifiedPipelineStats {
 class UnifiedExporterPipeline {
 public:
     /// Create a pipeline with the given components
-    /// @param transport Transport sink (MQTT, SOME/IP, etc.)
+    /// @param transport Backend transport (MQTT, SOME/IP, etc.)
     /// @param compressor Compression strategy (zstd, none)
     /// @param config Pipeline configuration
     UnifiedExporterPipeline(
-        std::unique_ptr<TransportSink> transport,
+        std::unique_ptr<vep::BackendTransport> transport,
         std::unique_ptr<Compressor> compressor,
         const UnifiedPipelineConfig& config = {});
 
@@ -135,7 +136,7 @@ private:
     UnifiedPipelineConfig config_;
 
     // Components
-    std::unique_ptr<TransportSink> transport_;
+    std::unique_ptr<vep::BackendTransport> transport_;
     std::unique_ptr<Compressor> compressor_;
 
     // Single unified batch builder
