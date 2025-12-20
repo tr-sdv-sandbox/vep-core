@@ -209,6 +209,9 @@ target_link_libraries(vep_mqtt_logger PRIVATE
 # vep_host_metrics - host metrics collector
 add_subdirectory(tools/vep_host_metrics)
 
+# cloud_test_client - simulates cloud side for transport testing
+add_subdirectory(tools/cloud_test_client)
+
 # ============================================================================
 # Kuksa-DDS Bridge (requires libkuksa-cpp)
 # ============================================================================
