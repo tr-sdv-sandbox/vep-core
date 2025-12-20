@@ -1,5 +1,5 @@
 #!/bin/bash
-# install_deps.sh - Install dependencies for COVESA IFEX VDR Integration
+# install_deps.sh - Install dependencies for Vehicle Edge Platform
 #
 # Usage: ./install_deps.sh
 #
@@ -9,7 +9,7 @@
 set -e
 
 echo "=================================================="
-echo "COVESA IFEX VDR Integration - Dependency Installer"
+echo "Vehicle Edge Platform - Dependency Installer"
 echo "=================================================="
 echo ""
 

@@ -1,9 +1,9 @@
-# COVESA IFEX VDR Integration
+# VEP Core
 
-Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline using:
+Core components for Vehicle Edge Platform demonstrating a complete vehicle-to-cloud telemetry pipeline using:
 
 - **libvssdag** - CAN-to-VSS signal transformation with DBC files
-- **vdr-light** - DDS-based vehicle data readout framework
+- **vep-dds** - DDS-based vehicle data framework
 - **Protobuf + Zstd** - Bandwidth-efficient transfer encoding
 - **MQTT** - Vehicle-to-cloud message transport
 

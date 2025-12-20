@@ -1,4 +1,4 @@
-// Copyright 2025 COVESA IFEX VDR Integration Contributors
+// Copyright 2025 Vehicle Edge Platform Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "wire_decoder.hpp"

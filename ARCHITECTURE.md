@@ -1,4 +1,4 @@
-# COVESA IFEX VDR Integration - Architecture
+# Vehicle Edge Platform - Architecture
 
 ## System Overview
 
