@@ -70,7 +70,7 @@ static DecodedStruct decode_struct_value(const vep::transfer::StructValue& pb_st
 }
 
 DecodedSignal decode_signal(const vep::transfer::Signal& pb_signal,
-                            int64_t base_timestamp_ms) {
+                            int64_t timestamp_ms) {
     DecodedSignal signal;
 
     // Get path (either full path or interned ID)
@@ -81,7 +81,8 @@ DecodedSignal decode_signal(const vep::transfer::Signal& pb_signal,
         signal.path = "<path_id:" + std::to_string(pb_signal.path_id()) + ">";
     }
 
-    signal.timestamp_ms = base_timestamp_ms + pb_signal.timestamp_delta_ms();
+    // Use the pre-computed timestamp from the TransferItem
+    signal.timestamp_ms = timestamp_ms;
     signal.quality = decode_quality(pb_signal.quality());
 
     // Decode value based on type
@@ -194,25 +195,26 @@ DecodedSignal decode_signal(const vep::transfer::Signal& pb_signal,
 }
 
 DecodedEvent decode_event(const vep::transfer::Event& pb_event,
-                          int64_t base_timestamp_ms) {
+                          int64_t timestamp_ms) {
     DecodedEvent event;
     event.event_id = pb_event.event_id();
-    event.timestamp_ms = base_timestamp_ms + pb_event.timestamp_delta_ms();
+    event.timestamp_ms = timestamp_ms;
     event.category = pb_event.category();
     event.event_type = pb_event.event_type();
     event.severity = static_cast<int32_t>(pb_event.severity());
 
-    // Note: proto has 'payload' bytes field, not key-value attributes
-    // We don't decode payload here - it's application-specific
+    // Copy payload bytes
+    const auto& payload = pb_event.payload();
+    event.payload.assign(payload.begin(), payload.end());
 
     return event;
 }
 
 DecodedMetric decode_metric(const vep::transfer::Metric& pb_metric,
-                            int64_t base_timestamp_ms) {
+                            int64_t timestamp_ms) {
     DecodedMetric metric;
     metric.name = pb_metric.name();
-    metric.timestamp_ms = base_timestamp_ms + pb_metric.timestamp_delta_ms();
+    metric.timestamp_ms = timestamp_ms;
 
     // Determine metric type from oneof
     switch (pb_metric.metric_type_case()) {
@@ -252,16 +254,12 @@ DecodedMetric decode_metric(const vep::transfer::Metric& pb_metric,
 }
 
 DecodedLogEntry decode_log(const vep::transfer::LogEntry& pb_log,
-                           int64_t base_timestamp_ms) {
+                           int64_t timestamp_ms) {
     DecodedLogEntry entry;
-    entry.timestamp_ms = base_timestamp_ms + pb_log.timestamp_delta_ms();
+    entry.timestamp_ms = timestamp_ms;
     entry.level = static_cast<LogLevel>(pb_log.level());
     entry.component = pb_log.component();
     entry.message = pb_log.message();
-
-    // Proto doesn't have trace_id/span_id - leave empty
-    entry.trace_id = "";
-    entry.span_id = "";
 
     // Decode attributes from parallel arrays
     int attr_count = std::min(pb_log.attr_keys_size(), pb_log.attr_values_size());
@@ -272,76 +270,79 @@ DecodedLogEntry decode_log(const vep::transfer::LogEntry& pb_log,
     return entry;
 }
 
-std::optional<DecodedSignalBatch> decode_signal_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::SignalBatch pb_batch;
+std::optional<DecodedTransferBatch> decode_transfer_batch(const std::vector<uint8_t>& data) {
+    vep::transfer::TransferBatch pb_batch;
     if (!pb_batch.ParseFromArray(data.data(), static_cast<int>(data.size()))) {
         return std::nullopt;
     }
 
-    DecodedSignalBatch batch;
+    DecodedTransferBatch batch;
     batch.source_id = pb_batch.source_id();
     batch.sequence = pb_batch.sequence();
     batch.base_timestamp_ms = pb_batch.base_timestamp_ms();
 
-    for (const auto& pb_signal : pb_batch.signals()) {
-        batch.signals.push_back(decode_signal(pb_signal, batch.base_timestamp_ms));
+    for (const auto& pb_item : pb_batch.items()) {
+        DecodedItem item;
+        item.timestamp_ms = batch.base_timestamp_ms + pb_item.timestamp_delta_ms();
+
+        switch (pb_item.item_case()) {
+            case vep::transfer::TransferItem::kSignal:
+                item.type = DecodedItemType::SIGNAL;
+                item.signal = decode_signal(pb_item.signal(), item.timestamp_ms);
+                break;
+            case vep::transfer::TransferItem::kEvent:
+                item.type = DecodedItemType::EVENT;
+                item.event = decode_event(pb_item.event(), item.timestamp_ms);
+                break;
+            case vep::transfer::TransferItem::kMetric:
+                item.type = DecodedItemType::METRIC;
+                item.metric = decode_metric(pb_item.metric(), item.timestamp_ms);
+                break;
+            case vep::transfer::TransferItem::kLog:
+                item.type = DecodedItemType::LOG;
+                item.log = decode_log(pb_item.log(), item.timestamp_ms);
+                break;
+            default:
+                item.type = DecodedItemType::UNKNOWN;
+                break;
+        }
+
+        batch.items.push_back(std::move(item));
     }
 
     return batch;
 }
 
-std::optional<DecodedEventBatch> decode_event_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::EventBatch pb_batch;
-    if (!pb_batch.ParseFromArray(data.data(), static_cast<int>(data.size()))) {
-        return std::nullopt;
+size_t DecodedTransferBatch::signal_count() const {
+    size_t count = 0;
+    for (const auto& item : items) {
+        if (item.type == DecodedItemType::SIGNAL) ++count;
     }
-
-    DecodedEventBatch batch;
-    batch.source_id = pb_batch.source_id();
-    batch.sequence = pb_batch.sequence();
-
-    int64_t base_ts = pb_batch.base_timestamp_ms();
-    for (const auto& pb_event : pb_batch.events()) {
-        batch.events.push_back(decode_event(pb_event, base_ts));
-    }
-
-    return batch;
+    return count;
 }
 
-std::optional<DecodedMetricsBatch> decode_metrics_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::MetricsBatch pb_batch;
-    if (!pb_batch.ParseFromArray(data.data(), static_cast<int>(data.size()))) {
-        return std::nullopt;
+size_t DecodedTransferBatch::event_count() const {
+    size_t count = 0;
+    for (const auto& item : items) {
+        if (item.type == DecodedItemType::EVENT) ++count;
     }
-
-    DecodedMetricsBatch batch;
-    batch.source_id = pb_batch.source_id();
-    batch.sequence = pb_batch.sequence();
-
-    int64_t base_ts = pb_batch.base_timestamp_ms();
-    for (const auto& pb_metric : pb_batch.metrics()) {
-        batch.metrics.push_back(decode_metric(pb_metric, base_ts));
-    }
-
-    return batch;
+    return count;
 }
 
-std::optional<DecodedLogBatch> decode_log_batch(const std::vector<uint8_t>& data) {
-    vep::transfer::LogBatch pb_batch;
-    if (!pb_batch.ParseFromArray(data.data(), static_cast<int>(data.size()))) {
-        return std::nullopt;
+size_t DecodedTransferBatch::metric_count() const {
+    size_t count = 0;
+    for (const auto& item : items) {
+        if (item.type == DecodedItemType::METRIC) ++count;
     }
+    return count;
+}
 
-    DecodedLogBatch batch;
-    batch.source_id = pb_batch.source_id();
-    batch.sequence = pb_batch.sequence();
-
-    int64_t base_ts = pb_batch.base_timestamp_ms();
-    for (const auto& pb_log : pb_batch.logs()) {
-        batch.entries.push_back(decode_log(pb_log, base_ts));
+size_t DecodedTransferBatch::log_count() const {
+    size_t count = 0;
+    for (const auto& item : items) {
+        if (item.type == DecodedItemType::LOG) ++count;
     }
-
-    return batch;
+    return count;
 }
 
 const char* quality_to_string(DecodedQuality quality) {
@@ -369,6 +370,16 @@ const char* log_level_to_string(LogLevel level) {
         case LogLevel::WARN: return "WARN";
         case LogLevel::ERROR: return "ERROR";
         default: return "UNKNOWN";
+    }
+}
+
+const char* item_type_to_string(DecodedItemType type) {
+    switch (type) {
+        case DecodedItemType::SIGNAL: return "signal";
+        case DecodedItemType::EVENT: return "event";
+        case DecodedItemType::METRIC: return "metric";
+        case DecodedItemType::LOG: return "log";
+        default: return "unknown";
     }
 }
 

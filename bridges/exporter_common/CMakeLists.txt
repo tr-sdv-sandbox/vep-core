@@ -16,7 +16,7 @@ add_library(vep_exporter_common STATIC
     src/wire_decoder.cpp
     src/batch_builder.cpp
     src/compressor.cpp
-    src/exporter_pipeline.cpp
+    src/unified_pipeline.cpp
     src/subscriber.cpp
 )
 

@@ -182,20 +182,22 @@ message(STATUS "Probes:")
 # Tools (test utilities)
 # ============================================================================
 
-# vep_mqtt_receiver - receives MQTT messages, decodes and displays
-add_executable(vep_mqtt_receiver
-    tools/vep_mqtt_receiver/main.cpp
+# vep_mqtt_logger - receives MQTT messages, decodes TransferBatch and displays
+add_executable(vep_mqtt_logger
+    tools/vep_mqtt_logger/main.cpp
 )
 
-target_include_directories(vep_mqtt_receiver PRIVATE
+target_include_directories(vep_mqtt_logger PRIVATE
+    ${PROTO_OUTPUT_DIR}
     ${MOSQUITTO_INCLUDE_DIRS}
+    ${ZSTD_INCLUDE_DIRS}
 )
 
-target_link_libraries(vep_mqtt_receiver PRIVATE
-    vep_exporter_common      # Decompressor, wire_decoder
-    nlohmann_json::nlohmann_json
+target_link_libraries(vep_mqtt_logger PRIVATE
+    transfer_proto           # TransferBatch protobuf
     glog::glog
     ${MOSQUITTO_LIBRARIES}
+    ${ZSTD_LIBRARIES}
 )
 
 # vep_host_metrics - host metrics collector
@@ -316,8 +318,8 @@ add_test(NAME integration_exporter_runs
     COMMAND vep_exporter --help
 )
 
-add_test(NAME integration_vep_mqtt_receiver_runs
-    COMMAND vep_mqtt_receiver --help
+add_test(NAME integration_vep_mqtt_logger_runs
+    COMMAND vep_mqtt_logger --help
 )
 
 # ============================================================================
@@ -361,7 +363,7 @@ message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
 message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport bridge)")
 message(STATUS "  Tools:")
-message(STATUS "    - vep_mqtt_receiver     (MQTT -> decompress -> display)")
+message(STATUS "    - vep_mqtt_logger       (MQTT -> decompress -> TransferBatch -> display)")
 message(STATUS "    - vep_host_metrics      (Linux host metrics -> OTLP gRPC)")
 message(STATUS "")
 message(STATUS "Kuksa-DDS Bridge: ${KUKSA_BRIDGE_ENABLED}")

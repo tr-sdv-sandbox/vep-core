@@ -4,9 +4,9 @@
 #pragma once
 
 /// @file batch_builder.hpp
-/// @brief Batch building for efficient wire transfer
+/// @brief Unified batch building for efficient wire transfer
 ///
-/// Builds protobuf batches from DDS messages with:
+/// Builds TransferBatch protobuf with interleaved items:
 /// - Delta timestamps (base + per-message offset)
 /// - Sequence numbers for ordering
 /// - Pre-conversion of values to avoid DDS pointer issues
@@ -22,137 +22,78 @@
 
 namespace vep::exporter {
 
-/// Configuration for batch building
-struct BatchConfig {
-    std::string source_id = "vdr";
-    size_t max_signals = 100;
-    size_t max_events = 50;
-    size_t max_metrics = 100;
-    size_t max_logs = 100;
+/// Item type for unified batching
+enum class ItemType {
+    Signal,
+    Event,
+    Metric,
+    Log
 };
 
-/// Builds batches of VSS signals
-class SignalBatchBuilder {
+/// Builds unified TransferBatch with interleaved items
+///
+/// Collects all data types (signals, events, metrics, logs)
+/// in arrival order. Used for both MQTT and SOME/IP transport.
+///
+/// Example:
+/// @code
+///   UnifiedBatchBuilder builder("vep_exporter", 100);
+///   builder.add(signal);
+///   builder.add(event);
+///   builder.add(gauge);
+///   auto batch = builder.build();  // Contains all items interleaved
+/// @endcode
+class UnifiedBatchBuilder {
 public:
-    explicit SignalBatchBuilder(const std::string& source_id = "vdr");
+    /// Create builder with source ID and max items per batch
+    explicit UnifiedBatchBuilder(const std::string& source_id = "vep_exporter",
+                                  size_t max_items = 100);
 
-    /// Add a signal to the batch
-    /// @note Call from DDS callback - copies data immediately
+    /// @name Add items (all types accepted)
+    /// Items are stored in arrival order
+    /// @{
     void add(const vep_VssSignal& msg);
+    void add(const vep_Event& msg);
+    void add(const vep_OtelGauge& msg);
+    void add(const vep_OtelCounter& msg);
+    void add(const vep_OtelHistogram& msg);
+    void add(const vep_OtelLogEntry& msg);
+    /// @}
 
-    /// Check if batch is ready (has messages)
+    /// Check if batch has any items
     bool ready() const;
 
-    /// Get current batch size
+    /// Get current item count
     size_t size() const;
 
+    /// Check if batch is at capacity
+    bool full() const;
+
     /// Build the batch and serialize to bytes
-    /// @return Serialized protobuf batch
+    /// @return Serialized TransferBatch protobuf
     std::vector<uint8_t> build();
 
     /// Reset the builder for next batch
     void reset();
 
+    /// Get approximate serialized size (for size-based flushing)
+    size_t estimated_size() const;
+
 private:
-    struct PendingSignal {
-        std::string path;
+    /// Pending item - stores pre-converted protobuf and timestamp
+    struct PendingItem {
         int64_t timestamp_ms;
-        vep::transfer::Quality quality;
-        vep::transfer::Signal proto_signal;  // Pre-converted
+        ItemType type;
+        vep::transfer::TransferItem proto_item;  // Pre-built
     };
 
     std::string source_id_;
+    size_t max_items_;
     std::atomic<uint32_t> sequence_{0};
     mutable std::mutex mutex_;
-    std::vector<PendingSignal> pending_;
+    std::vector<PendingItem> pending_;
     int64_t base_timestamp_ms_ = 0;
-};
-
-/// Builds batches of events
-class EventBatchBuilder {
-public:
-    explicit EventBatchBuilder(const std::string& source_id = "vdr");
-
-    void add(const vep_Event& msg);
-    bool ready() const;
-    size_t size() const;
-    std::vector<uint8_t> build();
-    void reset();
-
-private:
-    struct PendingEvent {
-        std::string event_id;
-        int64_t timestamp_ms;
-        std::string category;
-        std::string event_type;
-        int severity;
-    };
-
-    std::string source_id_;
-    std::atomic<uint32_t> sequence_{0};
-    mutable std::mutex mutex_;
-    std::vector<PendingEvent> pending_;
-};
-
-/// Builds batches of metrics (gauges, counters, histograms)
-class MetricsBatchBuilder {
-public:
-    explicit MetricsBatchBuilder(const std::string& source_id = "vdr");
-
-    void add(const vep_OtelGauge& msg);
-    void add(const vep_OtelCounter& msg);
-    void add(const vep_OtelHistogram& msg);
-    bool ready() const;
-    size_t size() const;
-    std::vector<uint8_t> build();
-    void reset();
-
-private:
-    struct PendingMetric {
-        std::string name;
-        int64_t timestamp_ms;
-        int metric_type;  // 0=gauge, 1=counter, 2=histogram
-        double value;
-        std::vector<std::string> label_keys;
-        std::vector<std::string> label_values;
-        // Histogram-specific
-        uint64_t sample_count = 0;
-        double sample_sum = 0.0;
-        std::vector<double> bucket_bounds;
-        std::vector<uint64_t> bucket_counts;
-    };
-
-    std::string source_id_;
-    std::atomic<uint32_t> sequence_{0};
-    mutable std::mutex mutex_;
-    std::vector<PendingMetric> pending_;
-};
-
-/// Builds batches of log entries
-class LogBatchBuilder {
-public:
-    explicit LogBatchBuilder(const std::string& source_id = "vdr");
-
-    void add(const vep_OtelLogEntry& msg);
-    bool ready() const;
-    size_t size() const;
-    std::vector<uint8_t> build();
-    void reset();
-
-private:
-    struct PendingLog {
-        int64_t timestamp_ms;
-        int level;
-        std::string component;
-        std::string message;
-        std::vector<std::string> attr_keys;
-        std::vector<std::string> attr_values;
-    };
-
-    std::string source_id_;
-    std::atomic<uint32_t> sequence_{0};
-    mutable std::mutex mutex_;
-    std::vector<PendingLog> pending_;
+    size_t estimated_bytes_ = 0;
 };
 
 }  // namespace vep::exporter

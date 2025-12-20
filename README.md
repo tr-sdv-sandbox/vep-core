@@ -42,8 +42,8 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 │  └──────────┬──────────┘                                                    │
 │             │                                                               │
 │             ▼                                                               │
-│  ┌─────────────────────┐     Decompress → Decode Protobuf → JSON/Storage   │
-│  │ vep_mqtt_receiver   │                                                    │
+│  ┌─────────────────────┐     Decompress → Decode TransferBatch → Display   │
+│  │  vep_mqtt_logger    │                                                    │
 │  └─────────────────────┘                                                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -89,12 +89,12 @@ Integration example demonstrating a complete vehicle-to-cloud telemetry pipeline
 
 ### Tools
 
-**vep_mqtt_receiver** - MQTT receiver for testing:
+**vep_mqtt_logger** - MQTT logger for testing:
 - Subscribes to MQTT topics
 - Decompresses with zstd
-- Decodes protobuf (signals, events, metrics, logs)
+- Decodes TransferBatch (unified format with interleaved items)
 - Displays in human-readable or JSON format
-- Shows service labels for multi-source identification
+- Shows per-source statistics on exit
 
 **vep_host_metrics** - Linux host metrics collector:
 - Collects CPU, memory, disk I/O, network, filesystem metrics
@@ -173,10 +173,10 @@ cmake --build build -j$(nproc)
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
-### 2. Start MQTT Receiver
+### 2. Start MQTT Logger
 
 ```bash
-./build/vep_mqtt_receiver --verbose
+./build/vep_mqtt_logger --verbose
 ```
 
 ### 3. Start VDR Exporter
@@ -196,7 +196,7 @@ You should see signals flowing:
 2. libvssdag transforms CAN→VSS
 3. DDS publishes to domain
 4. vep_exporter batches, compresses, sends to MQTT
-5. vep_mqtt_receiver receives, decompresses, displays
+5. vep_mqtt_logger receives, decompresses, displays
 
 ## Configuration
 

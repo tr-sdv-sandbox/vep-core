@@ -6,7 +6,7 @@
 /// @file wire_decoder.hpp
 /// @brief Protobuf wire format to structured data conversion
 ///
-/// Decodes Protobuf types from transfer.proto back to structured C++ types
+/// Decodes TransferBatch protobuf back to structured C++ types
 /// for use in receivers, testing, and cloud processing.
 ///
 /// Unlike the encoder which works with DDS C types, the decoder produces
@@ -82,7 +82,7 @@ struct DecodedEvent {
     std::string category;
     std::string event_type;
     int32_t severity;
-    std::map<std::string, std::string> attributes;
+    std::vector<uint8_t> payload;
 };
 
 /// Metric type enumeration
@@ -122,37 +122,41 @@ struct DecodedLogEntry {
     std::string component;
     std::string message;
     std::map<std::string, std::string> attributes;
-    std::string trace_id;
-    std::string span_id;
 };
 
-/// A decoded signal batch
-struct DecodedSignalBatch {
+/// Item type in a transfer batch
+enum class DecodedItemType {
+    SIGNAL,
+    EVENT,
+    METRIC,
+    LOG,
+    UNKNOWN
+};
+
+/// A decoded transfer batch item
+struct DecodedItem {
+    int64_t timestamp_ms;
+    DecodedItemType type;
+
+    // Only one of these is populated based on type
+    std::optional<DecodedSignal> signal;
+    std::optional<DecodedEvent> event;
+    std::optional<DecodedMetric> metric;
+    std::optional<DecodedLogEntry> log;
+};
+
+/// A decoded unified transfer batch
+struct DecodedTransferBatch {
     std::string source_id;
     uint32_t sequence;
     int64_t base_timestamp_ms;
-    std::vector<DecodedSignal> signals;
-};
+    std::vector<DecodedItem> items;
 
-/// A decoded event batch
-struct DecodedEventBatch {
-    std::string source_id;
-    uint32_t sequence;
-    std::vector<DecodedEvent> events;
-};
-
-/// A decoded metrics batch
-struct DecodedMetricsBatch {
-    std::string source_id;
-    uint32_t sequence;
-    std::vector<DecodedMetric> metrics;
-};
-
-/// A decoded log batch
-struct DecodedLogBatch {
-    std::string source_id;
-    uint32_t sequence;
-    std::vector<DecodedLogEntry> entries;
+    /// Count items of each type
+    size_t signal_count() const;
+    size_t event_count() const;
+    size_t metric_count() const;
+    size_t log_count() const;
 };
 
 // =============================================================================
@@ -164,36 +168,27 @@ DecodedQuality decode_quality(vep::transfer::Quality pb_quality);
 
 /// Decode a Protobuf Signal to DecodedSignal
 /// @param pb_signal Protobuf signal
-/// @param base_timestamp_ms Base timestamp from batch header
-/// @return Decoded signal with absolute timestamp
+/// @param timestamp_ms Absolute timestamp for this item
+/// @return Decoded signal
 DecodedSignal decode_signal(const vep::transfer::Signal& pb_signal,
-                            int64_t base_timestamp_ms);
+                            int64_t timestamp_ms);
 
 /// Decode a Protobuf Event to DecodedEvent
 DecodedEvent decode_event(const vep::transfer::Event& pb_event,
-                          int64_t base_timestamp_ms);
+                          int64_t timestamp_ms);
 
 /// Decode a Protobuf Metric to DecodedMetric
 DecodedMetric decode_metric(const vep::transfer::Metric& pb_metric,
-                            int64_t base_timestamp_ms);
+                            int64_t timestamp_ms);
 
 /// Decode a Protobuf LogEntry to DecodedLogEntry
 DecodedLogEntry decode_log(const vep::transfer::LogEntry& pb_log,
-                           int64_t base_timestamp_ms);
+                           int64_t timestamp_ms);
 
-/// Decode a complete SignalBatch
+/// Decode a complete TransferBatch
 /// @param data Serialized protobuf bytes
 /// @return Decoded batch, or nullopt if parsing failed
-std::optional<DecodedSignalBatch> decode_signal_batch(const std::vector<uint8_t>& data);
-
-/// Decode a complete EventBatch
-std::optional<DecodedEventBatch> decode_event_batch(const std::vector<uint8_t>& data);
-
-/// Decode a complete MetricsBatch
-std::optional<DecodedMetricsBatch> decode_metrics_batch(const std::vector<uint8_t>& data);
-
-/// Decode a complete LogBatch
-std::optional<DecodedLogBatch> decode_log_batch(const std::vector<uint8_t>& data);
+std::optional<DecodedTransferBatch> decode_transfer_batch(const std::vector<uint8_t>& data);
 
 // =============================================================================
 // Utility Functions
@@ -207,6 +202,9 @@ const char* metric_type_to_string(MetricType type);
 
 /// Get string representation of log level
 const char* log_level_to_string(LogLevel level);
+
+/// Get string representation of item type
+const char* item_type_to_string(DecodedItemType type);
 
 /// Get the value type name from a DecodedValue
 std::string value_type_name(const DecodedValue& value);

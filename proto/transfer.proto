@@ -11,22 +11,65 @@ package vep.transfer;
 
 option optimize_for = LITE_RUNTIME;
 
-// Batch of VSS signals - primary transfer unit
-// Typically zstd compressed before MQTT publish
-message SignalBatch {
-  // Relative timestamp base (ms since epoch, truncated)
-  // Individual signals use delta from this
+// =============================================================================
+// TransferBatch - unified batch with interleaved items
+// =============================================================================
+//
+// Contains all data types (signals, events, metrics, logs) interleaved in
+// arrival order. This is the primary wire format for vehicle-to-cloud.
+//
+// Benefits:
+// - Single content_id per application (matches BE Message Proxy pattern)
+// - Fair batching - all types get representation up to size limit
+// - Preserves cross-type temporal ordering
+//
+// Usage:
+//   TransferBatch → zstd compress → CCPMainMessage → SOME/IP → MQTT
+
+message TransferBatch {
+  // Relative timestamp base (ms since epoch)
+  // Individual items use delta from this
   fixed64 base_timestamp_ms = 1;
 
-  // Source identifier (short, e.g. "vssdag", "obd")
+  // Source identifier (e.g., "vep_exporter")
   string source_id = 2;
 
   // Batch sequence number (monotonic per source)
   uint32 sequence = 3;
 
-  // Signals in this batch
-  repeated Signal signals = 4;
+  // Reserved for future batch-level fields
+  reserved 4 to 9;
+
+  // Interleaved items in arrival order
+  repeated TransferItem items = 10;
 }
+
+// Single item in a TransferBatch - can be any data type
+message TransferItem {
+  // Delta from batch base_timestamp_ms (saves bytes)
+  uint32 timestamp_delta_ms = 1;
+
+  // Reserved for future item-level fields
+  reserved 2 to 9;
+
+  // The actual data item
+  // IDs 10-13 are currently used, 14-19 reserved for future types
+  oneof item {
+    Signal signal = 10;
+    Event event = 11;
+    Metric metric = 12;
+    LogEntry log = 13;
+    // Reserved for future types:
+    // 14: diagnostic
+    // 15: command_response
+    // 16: file_chunk
+    // 17-19: future expansion
+  }
+}
+
+// =============================================================================
+// Data Types
+// =============================================================================
 
 message Signal {
   // Path can be full string or interned ID
@@ -38,8 +81,11 @@ message Signal {
   // Delta from batch base_timestamp_ms (saves bytes)
   uint32 timestamp_delta_ms = 3;
 
-  // Quality (0=VALID is default, saves a byte for common case)
+  // Quality (0=NOT_AVAILABLE is default)
   Quality quality = 4;
+
+  // Reserved for future signal-level fields
+  reserved 5 to 9;
 
   // Value - oneof for type efficiency
   // Aligned with VSS type system
@@ -70,7 +116,82 @@ message Signal {
   }
 }
 
-// Array types for efficient encoding
+enum Quality {
+  QUALITY_NOT_AVAILABLE = 0;
+  QUALITY_VALID = 1;          // Most common for published signals
+  QUALITY_INVALID = 2;
+}
+
+message Event {
+  string event_id = 1;
+  uint32 timestamp_delta_ms = 2;
+  string category = 3;        // "ADAS", "POWERTRAIN", etc
+  string event_type = 4;      // "harsh_brake", "dtc", etc
+  Severity severity = 5;
+  bytes payload = 6;          // Optional event-specific data
+
+  // Reserved for future event fields
+  reserved 7 to 9;
+}
+
+enum Severity {
+  SEVERITY_INFO = 0;
+  SEVERITY_WARNING = 1;
+  SEVERITY_ERROR = 2;
+  SEVERITY_CRITICAL = 3;
+}
+
+message Metric {
+  string name = 1;
+  uint32 timestamp_delta_ms = 2;
+
+  // Reserved for future metric fields
+  reserved 3 to 9;
+
+  oneof metric_type {
+    double gauge = 10;
+    double counter = 11;
+    Histogram histogram = 12;
+    // Reserved: 13-19 for future metric types (summary, etc.)
+  }
+
+  // Labels as parallel arrays (more compact than map)
+  repeated string label_keys = 20;
+  repeated string label_values = 21;
+}
+
+message Histogram {
+  uint64 sample_count = 1;
+  double sample_sum = 2;
+  repeated double bucket_bounds = 3;
+  repeated uint64 bucket_counts = 4;
+}
+
+message LogEntry {
+  uint32 timestamp_delta_ms = 1;
+  LogLevel level = 2;
+  string component = 3;
+  string message = 4;
+
+  // Reserved for future log fields
+  reserved 5 to 9;
+
+  // Structured attributes as parallel arrays
+  repeated string attr_keys = 10;
+  repeated string attr_values = 11;
+}
+
+enum LogLevel {
+  LOG_LEVEL_DEBUG = 0;
+  LOG_LEVEL_INFO = 1;
+  LOG_LEVEL_WARN = 2;
+  LOG_LEVEL_ERROR = 3;
+}
+
+// =============================================================================
+// Array Types
+// =============================================================================
+
 message BoolArray {
   repeated bool values = 1 [packed = true];
 }
@@ -103,8 +224,10 @@ message StringArray {
   repeated string values = 1;
 }
 
-// Struct value - named fields with typed values (VSS 4.0 struct support)
-// Supports nested structs for complex hierarchical data
+// =============================================================================
+// Struct Types (VSS 4.0)
+// =============================================================================
+
 message StructValue {
   string type_name = 1;                 // Struct type identifier
   repeated StructField fields = 2;      // Named fields
@@ -141,93 +264,10 @@ message StructArray {
   repeated StructValue values = 1;
 }
 
-enum Quality {
-  QUALITY_NOT_AVAILABLE = 0;
-  QUALITY_VALID = 1;          // Most common for published signals
-  QUALITY_INVALID = 2;
-}
+// =============================================================================
+// Path Dictionary (for path interning)
+// =============================================================================
 
-// Event batch
-message EventBatch {
-  fixed64 base_timestamp_ms = 1;
-  string source_id = 2;
-  uint32 sequence = 3;
-  repeated Event events = 4;
-}
-
-message Event {
-  string event_id = 1;
-  uint32 timestamp_delta_ms = 2;
-  string category = 3;        // "ADAS", "POWERTRAIN", etc
-  string event_type = 4;      // "harsh_brake", "dtc", etc
-  Severity severity = 5;
-  bytes payload = 6;          // Optional event-specific data
-}
-
-enum Severity {
-  SEVERITY_INFO = 0;
-  SEVERITY_WARNING = 1;
-  SEVERITY_ERROR = 2;
-  SEVERITY_CRITICAL = 3;
-}
-
-// Metrics batch (Prometheus-style gauges/counters)
-message MetricsBatch {
-  fixed64 base_timestamp_ms = 1;
-  string source_id = 2;
-  uint32 sequence = 3;
-  repeated Metric metrics = 4;
-}
-
-message Metric {
-  string name = 1;
-  uint32 timestamp_delta_ms = 2;
-
-  oneof metric_type {
-    double gauge = 10;
-    double counter = 11;
-    Histogram histogram = 12;
-  }
-
-  // Labels as parallel arrays (more compact than map)
-  repeated string label_keys = 20;
-  repeated string label_values = 21;
-}
-
-message Histogram {
-  uint64 sample_count = 1;
-  double sample_sum = 2;
-  repeated double bucket_bounds = 3;
-  repeated uint64 bucket_counts = 4;
-}
-
-// Log batch (structured logs)
-message LogBatch {
-  fixed64 base_timestamp_ms = 1;
-  string source_id = 2;
-  uint32 sequence = 3;
-  repeated LogEntry logs = 4;
-}
-
-message LogEntry {
-  uint32 timestamp_delta_ms = 1;
-  LogLevel level = 2;
-  string component = 3;
-  string message = 4;
-
-  // Structured attributes as parallel arrays
-  repeated string attr_keys = 10;
-  repeated string attr_values = 11;
-}
-
-enum LogLevel {
-  LOG_LEVEL_DEBUG = 0;
-  LOG_LEVEL_INFO = 1;
-  LOG_LEVEL_WARN = 2;
-  LOG_LEVEL_ERROR = 3;
-}
-
-// Path dictionary for interning (sent once, cached by receiver)
 message PathDictionary {
   uint32 version = 1;
   repeated PathEntry entries = 2;

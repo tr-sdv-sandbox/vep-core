@@ -4,17 +4,17 @@
 /// @file main.cpp
 /// @brief VEP Exporter - Subscribes to DDS topics and exports via compressed MQTT
 ///
-/// This application wires SubscriptionManager with ExporterPipeline
+/// This application wires SubscriptionManager with UnifiedExporterPipeline
 /// to create a bandwidth-efficient vehicle-to-cloud data export pipeline.
 ///
 /// Architecture:
-///   DDS Topics → SubscriptionManager → ExporterPipeline → TransportSink → MQTT
+///   DDS Topics → SubscriptionManager → UnifiedExporterPipeline → TransportSink → MQTT
 ///
 /// Usage:
 ///   vep_exporter [--config config.yaml]
 
 #include "common/dds_wrapper.hpp"
-#include "exporter_pipeline.hpp"
+#include "unified_pipeline.hpp"
 #include "mqtt_sink.hpp"
 #include "compressor.hpp"
 #include "subscriber.hpp"
@@ -47,7 +47,8 @@ void print_usage(const char* prog) {
               << "  --broker HOST     MQTT broker host (default: localhost)\n"
               << "  --port PORT       MQTT broker port (default: 1883)\n"
               << "  --client-id ID    MQTT client ID (default: vep_exporter)\n"
-              << "  --batch-size N    Max signals per batch (default: 100)\n"
+              << "  --topic TOPIC     MQTT topic (default: telemetry)\n"
+              << "  --batch-size N    Max items per batch (default: 100)\n"
               << "  --batch-timeout MS  Batch timeout in ms (default: 1000)\n"
               << "  --compression N   Zstd compression level 1-19 (default: 3)\n"
               << "  --no-compression  Disable compression\n"
@@ -60,7 +61,7 @@ void print_usage(const char* prog) {
 
 struct Config {
     vep::exporter::MqttConfig mqtt;
-    vep::exporter::PipelineConfig pipeline;
+    vep::exporter::UnifiedPipelineConfig pipeline;
     integration::SubscriptionConfig sub;
     std::string compressor_type = "zstd";
     int compression_level = 3;
@@ -93,12 +94,12 @@ Config parse_args(int argc, char* argv[]) {
 
                 if (yaml["batching"]) {
                     auto batch = yaml["batching"];
-                    if (batch["max_signals"]) config.pipeline.batch_max_signals = batch["max_signals"].as<size_t>();
-                    if (batch["max_events"]) config.pipeline.batch_max_events = batch["max_events"].as<size_t>();
-                    if (batch["max_metrics"]) config.pipeline.batch_max_metrics = batch["max_metrics"].as<size_t>();
+                    if (batch["max_items"]) config.pipeline.batch_max_items = batch["max_items"].as<size_t>();
+                    if (batch["max_bytes"]) config.pipeline.batch_max_bytes = batch["max_bytes"].as<size_t>();
                     if (batch["timeout_ms"]) {
                         config.pipeline.batch_timeout = std::chrono::milliseconds(batch["timeout_ms"].as<int>());
                     }
+                    if (batch["topic"]) config.pipeline.topic = batch["topic"].as<std::string>();
                 }
 
                 if (yaml["compression"]) {
@@ -128,8 +129,10 @@ Config parse_args(int argc, char* argv[]) {
             config.mqtt.broker_port = std::stoi(argv[++i]);
         } else if (arg == "--client-id" && i + 1 < argc) {
             config.mqtt.client_id = argv[++i];
+        } else if (arg == "--topic" && i + 1 < argc) {
+            config.pipeline.topic = argv[++i];
         } else if (arg == "--batch-size" && i + 1 < argc) {
-            config.pipeline.batch_max_signals = std::stoul(argv[++i]);
+            config.pipeline.batch_max_items = std::stoul(argv[++i]);
         } else if (arg == "--batch-timeout" && i + 1 < argc) {
             config.pipeline.batch_timeout = std::chrono::milliseconds(std::stoi(argv[++i]));
         } else if (arg == "--compression" && i + 1 < argc) {
@@ -148,8 +151,8 @@ void log_config(const Config& config) {
     LOG(INFO) << "=== VEP Exporter Configuration ===";
     LOG(INFO) << "MQTT Broker: " << config.mqtt.broker_host << ":" << config.mqtt.broker_port;
     LOG(INFO) << "Client ID: " << config.mqtt.client_id;
-    LOG(INFO) << "Topic prefix: " << config.mqtt.topic_prefix;
-    LOG(INFO) << "Batching: " << config.pipeline.batch_max_signals << " signals, "
+    LOG(INFO) << "Topic: " << config.pipeline.topic;
+    LOG(INFO) << "Batching: " << config.pipeline.batch_max_items << " items, "
               << config.pipeline.batch_timeout.count() << "ms timeout";
     LOG(INFO) << "Compression: " << config.compressor_type
               << (config.compressor_type == "zstd" ? " (level " + std::to_string(config.compression_level) + ")" : "");
@@ -200,9 +203,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create exporter pipeline
-    LOG(INFO) << "Creating exporter pipeline...";
-    vep::exporter::ExporterPipeline pipeline(
+    // Create unified exporter pipeline (interleaved items in TransferBatch)
+    LOG(INFO) << "Creating unified exporter pipeline...";
+    vep::exporter::UnifiedExporterPipeline pipeline(
         std::move(transport),
         std::move(compressor),
         config.pipeline);
@@ -257,12 +260,13 @@ int main(int argc, char* argv[]) {
             last_stats_time = now;
 
             auto stats = pipeline.stats();
-            LOG(INFO) << "Stats: signals=" << stats.signals_processed
+            LOG(INFO) << "Stats: items=" << stats.items_total
+                      << " (signals=" << stats.signals_processed
                       << " events=" << stats.events_processed
                       << " metrics=" << stats.metrics_processed
-                      << " logs=" << stats.logs_processed
+                      << " logs=" << stats.logs_processed << ")"
                       << " batches=" << stats.batches_sent
-                      << " compression=" << std::fixed << std::setprecision(2)
+                      << " compression=" << std::fixed << std::setprecision(1)
                       << (stats.compression_ratio() * 100.0) << "%";
         }
     }
@@ -274,12 +278,13 @@ int main(int argc, char* argv[]) {
 
     // Final stats
     auto stats = pipeline.stats();
-    LOG(INFO) << "Final stats: signals=" << stats.signals_processed
+    LOG(INFO) << "Final stats: items=" << stats.items_total
+              << " (signals=" << stats.signals_processed
               << " events=" << stats.events_processed
               << " metrics=" << stats.metrics_processed
-              << " logs=" << stats.logs_processed
+              << " logs=" << stats.logs_processed << ")"
               << " batches=" << stats.batches_sent
-              << " compression=" << std::fixed << std::setprecision(2)
+              << " compression=" << std::fixed << std::setprecision(1)
               << (stats.compression_ratio() * 100.0) << "%";
 
     LOG(INFO) << "VEP Exporter stopped.";

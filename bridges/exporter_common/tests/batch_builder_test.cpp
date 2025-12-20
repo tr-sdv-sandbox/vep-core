@@ -59,6 +59,21 @@ vep_OtelGauge create_test_gauge(const char* name, double value) {
     return gauge;
 }
 
+// Helper to create an OtelCounter
+vep_OtelCounter create_test_counter(const char* name, double value) {
+    vep_OtelCounter counter = {};
+    counter.header.source_id = const_cast<char*>("test");
+    counter.header.timestamp_ns = 1000000000;
+    counter.header.seq_num = 0;
+    counter.header.correlation_id = const_cast<char*>("");
+    counter.name = const_cast<char*>(name);
+    counter.value = value;
+    counter.labels._length = 0;
+    counter.labels._maximum = 0;
+    counter.labels._buffer = nullptr;
+    return counter;
+}
+
 // Helper to create an OtelLogEntry
 vep_OtelLogEntry create_test_log(const char* component, const char* message, vep_OtelLogLevel level) {
     vep_OtelLogEntry log = {};
@@ -78,20 +93,21 @@ vep_OtelLogEntry create_test_log(const char* component, const char* message, vep
 }
 
 // =============================================================================
-// SignalBatchBuilder Tests
+// UnifiedBatchBuilder Tests
 // =============================================================================
 
-class SignalBatchBuilderTest : public ::testing::Test {
+class UnifiedBatchBuilderTest : public ::testing::Test {
 protected:
-    SignalBatchBuilder builder_{"test_source"};
+    UnifiedBatchBuilder builder_{"test_source", 100};
 };
 
-TEST_F(SignalBatchBuilderTest, InitiallyEmpty) {
+TEST_F(UnifiedBatchBuilderTest, InitiallyEmpty) {
     EXPECT_FALSE(builder_.ready());
     EXPECT_EQ(builder_.size(), 0);
+    EXPECT_FALSE(builder_.full());
 }
 
-TEST_F(SignalBatchBuilderTest, AddSingleSignal) {
+TEST_F(UnifiedBatchBuilderTest, AddSingleSignal) {
     auto signal = create_test_signal("Vehicle.Speed", 100.5, 1000000000);
     builder_.add(signal);
 
@@ -99,7 +115,7 @@ TEST_F(SignalBatchBuilderTest, AddSingleSignal) {
     EXPECT_EQ(builder_.size(), 1);
 }
 
-TEST_F(SignalBatchBuilderTest, AddMultipleSignals) {
+TEST_F(UnifiedBatchBuilderTest, AddMultipleSignals) {
     builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
     builder_.add(create_test_signal("Vehicle.Powertrain.TractionBattery.StateOfCharge.Current", 85.0, 1001000000));
     builder_.add(create_test_signal("Vehicle.CurrentLocation.Latitude", 37.7749, 1002000000));
@@ -108,20 +124,32 @@ TEST_F(SignalBatchBuilderTest, AddMultipleSignals) {
     EXPECT_EQ(builder_.size(), 3);
 }
 
-TEST_F(SignalBatchBuilderTest, BuildProducesValidProtobuf) {
+TEST_F(UnifiedBatchBuilderTest, AddMixedTypes) {
+    // Add one of each type
+    builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
+    builder_.add(create_test_event("evt_1", "vehicle", vep_SEVERITY_WARNING));
+    builder_.add(create_test_gauge("cpu_usage", 45.5));
+    builder_.add(create_test_log("can_probe", "Received CAN frame", vep_LOG_LEVEL_INFO));
+
+    EXPECT_TRUE(builder_.ready());
+    EXPECT_EQ(builder_.size(), 4);
+}
+
+TEST_F(UnifiedBatchBuilderTest, BuildProducesValidProtobuf) {
     builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
 
     auto data = builder_.build();
     EXPECT_FALSE(data.empty());
 
     // Verify protobuf can be parsed
-    vep::transfer::SignalBatch batch;
+    vep::transfer::TransferBatch batch;
     EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
-    EXPECT_EQ(batch.signals_size(), 1);
-    EXPECT_EQ(batch.signals(0).path(), "Vehicle.Speed");
+    EXPECT_EQ(batch.items_size(), 1);
+    EXPECT_TRUE(batch.items(0).has_signal());
+    EXPECT_EQ(batch.items(0).signal().path(), "Vehicle.Speed");
 }
 
-TEST_F(SignalBatchBuilderTest, BuildClearsBatch) {
+TEST_F(UnifiedBatchBuilderTest, BuildClearsBatch) {
     builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
     auto data = builder_.build();
 
@@ -129,7 +157,7 @@ TEST_F(SignalBatchBuilderTest, BuildClearsBatch) {
     EXPECT_EQ(builder_.size(), 0);
 }
 
-TEST_F(SignalBatchBuilderTest, ResetClearsBatch) {
+TEST_F(UnifiedBatchBuilderTest, ResetClearsBatch) {
     builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
     builder_.reset();
 
@@ -137,7 +165,7 @@ TEST_F(SignalBatchBuilderTest, ResetClearsBatch) {
     EXPECT_EQ(builder_.size(), 0);
 }
 
-TEST_F(SignalBatchBuilderTest, DeltaTimestampsAreCalculated) {
+TEST_F(UnifiedBatchBuilderTest, DeltaTimestampsAreCalculated) {
     // All signals with timestamps relative to a base
     int64_t base_ns = 1000000000;
     builder_.add(create_test_signal("Signal1", 1.0, base_ns));
@@ -145,10 +173,10 @@ TEST_F(SignalBatchBuilderTest, DeltaTimestampsAreCalculated) {
     builder_.add(create_test_signal("Signal3", 3.0, base_ns + 20000000));   // +20ms
 
     auto data = builder_.build();
-    vep::transfer::SignalBatch batch;
+    vep::transfer::TransferBatch batch;
     EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
 
-    EXPECT_EQ(batch.signals_size(), 3);
+    EXPECT_EQ(batch.items_size(), 3);
     // Base timestamp should be set
     EXPECT_GT(batch.base_timestamp_ms(), 0);
 
@@ -156,34 +184,70 @@ TEST_F(SignalBatchBuilderTest, DeltaTimestampsAreCalculated) {
     int64_t base_ms = batch.base_timestamp_ms();
     int64_t expected_base_ms = base_ns / 1000000;  // Convert ns to ms
     EXPECT_EQ(base_ms, expected_base_ms);
+
+    // First item should have delta 0
+    EXPECT_EQ(batch.items(0).timestamp_delta_ms(), 0);
+    // Second item should have delta 10
+    EXPECT_EQ(batch.items(1).timestamp_delta_ms(), 10);
+    // Third item should have delta 20
+    EXPECT_EQ(batch.items(2).timestamp_delta_ms(), 20);
 }
 
-TEST_F(SignalBatchBuilderTest, SequenceNumberIncrementsAcrossBatches) {
+TEST_F(UnifiedBatchBuilderTest, SequenceNumberIncrementsAcrossBatches) {
     // First batch
     builder_.add(create_test_signal("Signal1", 1.0, 1000000000));
     auto data1 = builder_.build();
-    vep::transfer::SignalBatch batch1;
+    vep::transfer::TransferBatch batch1;
     EXPECT_TRUE(batch1.ParseFromArray(data1.data(), static_cast<int>(data1.size())));
 
     // Second batch
     builder_.add(create_test_signal("Signal2", 2.0, 1000000000));
     auto data2 = builder_.build();
-    vep::transfer::SignalBatch batch2;
+    vep::transfer::TransferBatch batch2;
     EXPECT_TRUE(batch2.ParseFromArray(data2.data(), static_cast<int>(data2.size())));
 
     EXPECT_NE(batch1.sequence(), batch2.sequence());
+    EXPECT_EQ(batch2.sequence(), batch1.sequence() + 1);
 }
 
-TEST_F(SignalBatchBuilderTest, ThreadSafety) {
+TEST_F(UnifiedBatchBuilderTest, FullReturnsTrueAtCapacity) {
+    UnifiedBatchBuilder small_builder("test", 3);
+
+    EXPECT_FALSE(small_builder.full());
+
+    small_builder.add(create_test_signal("Signal1", 1.0, 1000000000));
+    EXPECT_FALSE(small_builder.full());
+
+    small_builder.add(create_test_signal("Signal2", 2.0, 1000000000));
+    EXPECT_FALSE(small_builder.full());
+
+    small_builder.add(create_test_signal("Signal3", 3.0, 1000000000));
+    EXPECT_TRUE(small_builder.full());
+}
+
+TEST_F(UnifiedBatchBuilderTest, EstimatedSizeIncreases) {
+    size_t initial_size = builder_.estimated_size();
+    EXPECT_EQ(initial_size, 0);
+
+    builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
+    size_t size_after_one = builder_.estimated_size();
+    EXPECT_GT(size_after_one, initial_size);
+
+    builder_.add(create_test_signal("Vehicle.RPM", 3000.0, 1000000000));
+    size_t size_after_two = builder_.estimated_size();
+    EXPECT_GT(size_after_two, size_after_one);
+}
+
+TEST_F(UnifiedBatchBuilderTest, ThreadSafety) {
     const int NUM_THREADS = 4;
-    const int SIGNALS_PER_THREAD = 100;
+    const int ITEMS_PER_THREAD = 100;
 
     std::vector<std::thread> threads;
     for (int t = 0; t < NUM_THREADS; ++t) {
         threads.emplace_back([this, t]() {
-            for (int i = 0; i < SIGNALS_PER_THREAD; ++i) {
+            for (int i = 0; i < ITEMS_PER_THREAD; ++i) {
                 std::string path = "Signal_" + std::to_string(t) + "_" + std::to_string(i);
-                // Use static buffer for test (not production-safe, but OK for single-threaded signal creation)
+                // Use static buffer for test
                 thread_local char path_buf[64];
                 strncpy(path_buf, path.c_str(), sizeof(path_buf) - 1);
                 auto signal = create_test_signal(path_buf, i * 1.0, 1000000000 + i);
@@ -196,128 +260,58 @@ TEST_F(SignalBatchBuilderTest, ThreadSafety) {
         t.join();
     }
 
-    // All signals should be added
-    EXPECT_EQ(builder_.size(), NUM_THREADS * SIGNALS_PER_THREAD);
+    // All items should be added
+    EXPECT_EQ(builder_.size(), NUM_THREADS * ITEMS_PER_THREAD);
 }
 
-// =============================================================================
-// EventBatchBuilder Tests
-// =============================================================================
-
-class EventBatchBuilderTest : public ::testing::Test {
-protected:
-    EventBatchBuilder builder_{"test_source"};
-};
-
-TEST_F(EventBatchBuilderTest, InitiallyEmpty) {
-    EXPECT_FALSE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 0);
-}
-
-TEST_F(EventBatchBuilderTest, AddSingleEvent) {
-    builder_.add(create_test_event("evt_1", "vehicle", vep_SEVERITY_WARNING));
-
-    EXPECT_TRUE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 1);
-}
-
-TEST_F(EventBatchBuilderTest, BuildProducesValidProtobuf) {
+TEST_F(UnifiedBatchBuilderTest, MixedTypesProduceCorrectItemTypes) {
+    builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
     builder_.add(create_test_event("evt_1", "diagnostic", vep_SEVERITY_ERROR));
-
-    auto data = builder_.build();
-    EXPECT_FALSE(data.empty());
-
-    vep::transfer::EventBatch batch;
-    EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
-    EXPECT_EQ(batch.events_size(), 1);
-    EXPECT_EQ(batch.events(0).event_id(), "evt_1");
-    EXPECT_EQ(batch.events(0).category(), "diagnostic");
-}
-
-// =============================================================================
-// MetricsBatchBuilder Tests
-// =============================================================================
-
-class MetricsBatchBuilderTest : public ::testing::Test {
-protected:
-    MetricsBatchBuilder builder_{"test_source"};
-};
-
-TEST_F(MetricsBatchBuilderTest, InitiallyEmpty) {
-    EXPECT_FALSE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 0);
-}
-
-TEST_F(MetricsBatchBuilderTest, AddGauge) {
-    builder_.add(create_test_gauge("cpu_usage", 45.5));
-
-    EXPECT_TRUE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 1);
-}
-
-TEST_F(MetricsBatchBuilderTest, AddMultipleMetricTypes) {
-    builder_.add(create_test_gauge("gauge_1", 10.0));
-
-    // Create a counter
-    vep_OtelCounter counter = {};
-    counter.header.source_id = const_cast<char*>("test");
-    counter.header.timestamp_ns = 1000000000;
-    counter.header.seq_num = 0;
-    counter.header.correlation_id = const_cast<char*>("");
-    counter.name = const_cast<char*>("counter_1");
-    counter.value = 100.0;
-    counter.labels._length = 0;
-    counter.labels._maximum = 0;
-    counter.labels._buffer = nullptr;
-    builder_.add(counter);
-
-    EXPECT_EQ(builder_.size(), 2);
-}
-
-TEST_F(MetricsBatchBuilderTest, BuildProducesValidProtobuf) {
     builder_.add(create_test_gauge("memory_usage", 8192.0));
-
-    auto data = builder_.build();
-    EXPECT_FALSE(data.empty());
-
-    vep::transfer::MetricsBatch batch;
-    EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
-    EXPECT_EQ(batch.metrics_size(), 1);
-    EXPECT_EQ(batch.metrics(0).name(), "memory_usage");
-}
-
-// =============================================================================
-// LogBatchBuilder Tests
-// =============================================================================
-
-class LogBatchBuilderTest : public ::testing::Test {
-protected:
-    LogBatchBuilder builder_{"test_source"};
-};
-
-TEST_F(LogBatchBuilderTest, InitiallyEmpty) {
-    EXPECT_FALSE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 0);
-}
-
-TEST_F(LogBatchBuilderTest, AddSingleLog) {
-    builder_.add(create_test_log("can_probe", "Received CAN frame", vep_LOG_LEVEL_INFO));
-
-    EXPECT_TRUE(builder_.ready());
-    EXPECT_EQ(builder_.size(), 1);
-}
-
-TEST_F(LogBatchBuilderTest, BuildProducesValidProtobuf) {
     builder_.add(create_test_log("exporter", "Connection established", vep_LOG_LEVEL_INFO));
 
     auto data = builder_.build();
-    EXPECT_FALSE(data.empty());
-
-    vep::transfer::LogBatch batch;
+    vep::transfer::TransferBatch batch;
     EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
-    EXPECT_EQ(batch.logs_size(), 1);
-    EXPECT_EQ(batch.logs(0).component(), "exporter");
-    EXPECT_EQ(batch.logs(0).message(), "Connection established");
+
+    EXPECT_EQ(batch.items_size(), 4);
+
+    // Items should be in order of addition
+    EXPECT_TRUE(batch.items(0).has_signal());
+    EXPECT_EQ(batch.items(0).signal().path(), "Vehicle.Speed");
+
+    EXPECT_TRUE(batch.items(1).has_event());
+    EXPECT_EQ(batch.items(1).event().event_id(), "evt_1");
+
+    EXPECT_TRUE(batch.items(2).has_metric());
+    EXPECT_EQ(batch.items(2).metric().name(), "memory_usage");
+    EXPECT_TRUE(batch.items(2).metric().has_gauge());
+
+    EXPECT_TRUE(batch.items(3).has_log());
+    EXPECT_EQ(batch.items(3).log().component(), "exporter");
+}
+
+TEST_F(UnifiedBatchBuilderTest, CounterMetricType) {
+    builder_.add(create_test_counter("request_count", 1000.0));
+
+    auto data = builder_.build();
+    vep::transfer::TransferBatch batch;
+    EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
+
+    EXPECT_EQ(batch.items_size(), 1);
+    EXPECT_TRUE(batch.items(0).has_metric());
+    EXPECT_TRUE(batch.items(0).metric().has_counter());
+    EXPECT_DOUBLE_EQ(batch.items(0).metric().counter(), 1000.0);
+}
+
+TEST_F(UnifiedBatchBuilderTest, SourceIdIsSet) {
+    builder_.add(create_test_signal("Vehicle.Speed", 100.5, 1000000000));
+
+    auto data = builder_.build();
+    vep::transfer::TransferBatch batch;
+    EXPECT_TRUE(batch.ParseFromArray(data.data(), static_cast<int>(data.size())));
+
+    EXPECT_EQ(batch.source_id(), "test_source");
 }
 
 }  // namespace vep::exporter::test

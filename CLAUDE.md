@@ -35,7 +35,7 @@ vep-core/
 │   ├── rt_dds_bridge/         # DDS ↔ RT transport
 │   └── vep_exporter/          # DDS → compressed MQTT (one-way)
 ├── tools/                     # Test/debug utilities
-│   ├── vep_mqtt_receiver/     # MQTT → decompress → display
+│   ├── vep_mqtt_logger/       # MQTT → decompress → TransferBatch → display
 │   └── vep_host_metrics/      # Linux metrics → OTLP gRPC
 ├── proto/
 │   └── transfer.proto         # Wire format for MQTT transfer
@@ -54,7 +54,7 @@ vep-core/
 | `vep_exporter` | `bridges/vep_exporter/` | DDS → batched/compressed MQTT |
 | `kuksa_dds_bridge` | `bridges/kuksa_dds_bridge/` | KUKSA databroker ↔ DDS |
 | `rt_dds_bridge` | `bridges/rt_dds_bridge/` | DDS ↔ RT transport (loopback for testing) |
-| `vep_mqtt_receiver` | `tools/vep_mqtt_receiver/` | MQTT receiver/decoder |
+| `vep_mqtt_logger` | `tools/vep_mqtt_logger/` | MQTT → decompress → TransferBatch decoder |
 | `vep_host_metrics` | `tools/vep_host_metrics/` | Linux metrics collector |
 
 ## Libraries
