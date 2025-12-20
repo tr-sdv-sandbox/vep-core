@@ -34,9 +34,15 @@ vep-core/
 │   ├── kuksa_dds_bridge/      # KUKSA ↔ DDS bidirectional
 │   ├── rt_dds_bridge/         # DDS ↔ RT transport
 │   └── vep_exporter/          # DDS → compressed MQTT (one-way)
+├── libs/
+│   └── backend_transport/     # Generic bidirectional transport abstraction
+│       ├── include/vep/       # backend_transport.hpp, mqtt_backend_transport.hpp
+│       ├── src/               # MqttBackendTransport implementation
+│       └── tests/             # Transport tests with MqttTestFixture
 ├── tools/                     # Test/debug utilities
 │   ├── vep_mqtt_logger/       # MQTT → decompress → TransferBatch → display
-│   └── vep_host_metrics/      # Linux metrics → OTLP gRPC
+│   ├── vep_host_metrics/      # Linux metrics → OTLP gRPC
+│   └── cloud_test_client/     # Simulates cloud side for transport testing
 ├── proto/
 │   └── transfer.proto         # Wire format for MQTT transfer
 ├── tests/
@@ -62,6 +68,8 @@ vep-core/
 | Library | Purpose |
 |---------|---------|
 | `vep_exporter_common` | Wire encoding/decoding, batching, compression, DDS subscriber |
+| `vep_backend_transport` | Generic bidirectional transport interface (BackendTransport base class) |
+| `vep_mqtt_backend_transport` | MqttBackendTransport - MQTT implementation of BackendTransport |
 | `vep_mqtt_sink` | MQTT transport sink |
 | `kuksa_dds_bridge_lib` | KUKSA ↔ DDS bridging logic |
 | `rt_dds_bridge_lib` | DDS ↔ RT transport bridging |
@@ -189,6 +197,23 @@ The `exporter_common` library has comprehensive unit tests:
 | `compressor_test` | 31 | Compressor/Decompressor init, round-trips, stats, error handling |
 | `batch_builder_test` | ~20 | All batch builders, thread safety, protobuf output |
 | `wire_codec_test` | ~15 | Encode/decode round-trips for all message types |
+
+### Backend Transport Tests (Docker required)
+
+The `backend_transport` library has integration tests requiring MQTT broker:
+
+| Test | Description |
+|------|-------------|
+| `OpaqueDataFlowsCloudToVehicle` | Cloud publishes, vehicle receives via callback |
+| `OpaqueDataFlowsVehicleToCloud` | Vehicle publishes, cloud receives via callback |
+| `LargeOpaquePayload` | 64KB opaque data transfer |
+| `MultipleContentIds` | Multi-content routing |
+
+Tests use `MqttTestFixture` which:
+- Automatically starts Docker container (eclipse-mosquitto:2)
+- Configures anonymous access for testing
+- Cleans up on teardown
+- Respects `MQTT_HOST` environment variable for external broker
 
 ## Common Tasks
 
