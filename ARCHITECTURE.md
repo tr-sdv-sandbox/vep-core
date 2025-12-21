@@ -151,12 +151,12 @@ vep_host_metrics → OTLP gRPC :4317 → vep_otel_probe → DDS → vep_exporter
 ## Running the Framework
 
 ```bash
-# Start all components
-./run_framework.sh
+# Start all components (from vehicle-edge-platform root)
+./scripts/run_framework.sh
 
 # Replay CAN data
 canplayer -I config/candump.log vcan0=can0
 
 # Monitor KUKSA signals
-./kuksa_subscribe.sh "Vehicle"
+./scripts/run_kuksa_logger.sh
 ```

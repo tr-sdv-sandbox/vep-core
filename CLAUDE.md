@@ -157,7 +157,10 @@ if (batch) {
 
 ## Code Conventions
 
-- **Namespaces:** No project-wide namespace; use `vep::` for IDL types
+- **Namespaces:**
+  - `vep::exporter::` - wire encoder/decoder, compressor, batch builder
+  - `vep::` - backend transport, IDL types
+  - `integration::` - DDS subscription manager
 - **Logging:** glog (`LOG(INFO)`, `LOG(ERROR)`, `VLOG(1)` for verbose)
 - **CLI flags:** gflags for command-line parsing
 - **Config files:** YAML via yaml-cpp
@@ -166,9 +169,12 @@ if (batch) {
 ## Wire Protocol (transfer.proto)
 
 The exporter uses a bandwidth-optimized protobuf format:
-- Delta timestamps (base + per-signal deltas)
-- Batched signals (multiple per message)
-- Zstd compression (60-80% reduction)
+- **TransferBatch**: Unified batch with interleaved items (signals, events, metrics, logs)
+- **Delta timestamps**: Base timestamp + per-item deltas in milliseconds
+- **Path interning**: Optional path ID instead of full string
+- **Zstd compression**: 60-80% bandwidth reduction
+
+Message flow: `TransferBatch → zstd compress → MQTT`
 
 See `proto/transfer.proto` for message definitions.
 
