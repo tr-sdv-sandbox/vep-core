@@ -16,7 +16,7 @@
 #pragma once
 
 /// @file subscriber.hpp
-/// @brief VDR subscription management
+/// @brief VEP subscription management
 ///
 /// Manages DDS subscriptions based on configuration.
 /// Uses types from telemetry.idl (which imports vss_signal.idl from libvss-types).
@@ -64,7 +64,7 @@ struct SubscriptionConfig {
 };
 
 /*
- * SubscriptionManager - manages all DDS subscriptions for VDR.
+ * SubscriptionManager - manages all DDS subscriptions for VEP.
  *
  * Creates readers based on configuration and dispatches callbacks
  * when data arrives.

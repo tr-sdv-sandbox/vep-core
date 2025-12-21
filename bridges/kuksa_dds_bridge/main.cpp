@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// @file main.cpp
-/// @brief Kuksa-DDS Bridge - bridges Kuksa databroker with DDS for the VDR ecosystem
+/// @brief Kuksa-DDS Bridge - bridges Kuksa databroker with DDS for the VEP ecosystem
 ///
 /// This bridge enables:
 /// - Sensors: DDS rt/vss/signals → Kuksa (apps can subscribe via Kuksa)

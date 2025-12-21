@@ -17,10 +17,10 @@
 /// @brief OTLP-to-DDS Bridge Probe
 ///
 /// Receives OpenTelemetry metrics and logs via gRPC (OTLP protocol)
-/// and publishes them to DDS topics for VDR consumption.
+/// and publishes them to DDS topics for VEP consumption.
 ///
 /// Architecture:
-///   OTel SDK --> OTLP/gRPC --> [This Bridge] --> DDS --> VDR
+///   OTel SDK --> OTLP/gRPC --> [This Bridge] --> DDS --> VEP
 
 #include "common/dds_wrapper.hpp"
 #include "common/qos_profiles.hpp"

@@ -15,7 +15,7 @@ Core components for Vehicle Edge Platform demonstrating a complete vehicle-to-cl
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────┐     ┌─────────────────────────────────────────┐   │
-│  │   vdr_can_simulator │     │              DDS Domain                 │   │
+│  │   vep_can_simulator │     │              DDS Domain                 │   │
 │  │                     │     │                                         │   │
 │  │  CAN Data Generator │──▶  │  rt/vss/signals                        │   │
 │  │         +           │     │  rt/events/vehicle                     │   │
@@ -26,7 +26,7 @@ Core components for Vehicle Edge Platform demonstrating a complete vehicle-to-cl
 │                              ┌─────────────────────────────────────────┐   │
 │                              │            vep_exporter                 │   │
 │                              │                                         │   │
-│                              │  SubscriptionManager (from vdr-light)   │   │
+│                              │  SubscriptionManager (from vep-light)   │   │
 │                              │              +                          │   │
 │                              │  CompressedMqttSink (protobuf + zstd)   │   │
 │                              └───────────────────┬─────────────────────┘   │
@@ -66,7 +66,7 @@ Core components for Vehicle Edge Platform demonstrating a complete vehicle-to-cl
 ./vep_can_probe --config mappings.yaml --interface eth0 --dbc model3.dbc --transport avtp
 ```
 
-**vdr_can_simulator** - Simulates CAN bus data from a vehicle:
+**vep_can_simulator** - Simulates CAN bus data from a vehicle:
 - Generates realistic vehicle signals (speed, SOC, motor temps, doors, etc.)
 - Uses Tesla Model 3 DBC file for CAN encoding
 - Transforms CAN signals to VSS using libvssdag
@@ -81,7 +81,7 @@ Core components for Vehicle Edge Platform demonstrating a complete vehicle-to-cl
 ### Applications
 
 **vep_exporter** - Exports telemetry to cloud:
-- Subscribes to DDS topics using vdr-light's SubscriptionManager
+- Subscribes to DDS topics using vep-light's SubscriptionManager
 - Batches signals for efficiency
 - Encodes to lean protobuf format
 - Compresses with zstd
@@ -152,10 +152,10 @@ Ensure sibling libraries are available:
 
 ```
 ~/BALI/
-├── vdr-light/           # Required
+├── vep-light/           # Required
 ├── libvssdag/           # Required
 ├── libvss-types/        # Required (may be pulled by libvssdag)
-└── covesa-ifex-vdr-integration/  # This repo
+└── covesa-ifex-vep-integration/  # This repo
 ```
 
 ## Building
@@ -179,7 +179,7 @@ docker-compose -f docker/docker-compose.yml up -d
 ./build/vep_mqtt_logger --verbose
 ```
 
-### 3. Start VDR Exporter
+### 3. Start VEP Exporter
 
 ```bash
 ./build/vep_exporter
@@ -188,7 +188,7 @@ docker-compose -f docker/docker-compose.yml up -d
 ### 4. Start CAN Simulator
 
 ```bash
-./build/vdr_can_simulator --config config/model3_mappings_dag.yaml
+./build/vep_can_simulator --config config/model3_mappings_dag.yaml
 ```
 
 You should see signals flowing:
@@ -226,7 +226,7 @@ subscriptions:
   logs: false
 ```
 
-### vdr_can_simulator
+### vep_can_simulator
 
 Uses libvssdag YAML configuration. See `config/model3_mappings_dag.yaml`.
 
