@@ -83,29 +83,28 @@ void MqttBackendTransport::stop() {
               << " received=" << stats_.messages_received;
 }
 
-bool MqttBackendTransport::publish(uint32_t content_id,
-                                    const std::vector<uint8_t>& data,
+bool MqttBackendTransport::publish(const std::vector<uint8_t>& data,
                                     Persistence persistence) {
     if (connection_state_ != ConnectionState::Connected || !mosq_) {
-        LOG(WARNING) << "MQTT not connected, dropping message for content_id: " << content_id;
+        LOG(WARNING) << "MQTT not connected, dropping message for content_id: " << config_.content_id;
         std::lock_guard<std::mutex> lock(stats_mutex_);
         stats_.messages_failed++;
         return false;
     }
 
-    std::string topic = v2c_topic(content_id);
+    std::string topic = v2c_topic(config_.content_id);
 
     // Map persistence to MQTT QoS
-    // None → QoS 0, UntilDelivered+ → at least QoS 1
+    // BestEffort → QoS 0, Volatile+ → at least QoS 1
     int qos = config_.qos;
-    if (persistence == Persistence::None) {
+    if (persistence == Persistence::BestEffort) {
         qos = 0;
-    } else if (persistence >= Persistence::UntilDelivered && qos < 1) {
-        qos = 1;
+    } else if (qos < 1) {
+        qos = 1;  // Volatile and Durable need at least QoS 1
     }
 
-    // Retain flag for persistent messages
-    bool retain = (persistence == Persistence::Persistent);
+    // Retain flag for durable messages
+    bool retain = (persistence == Persistence::Durable);
 
     int rc = mosquitto_publish(mosq_, nullptr,
                                topic.c_str(),
@@ -133,49 +132,18 @@ bool MqttBackendTransport::publish(uint32_t content_id,
     return true;
 }
 
-void MqttBackendTransport::subscribe_content(uint32_t content_id) {
-    if (!mosq_) {
-        LOG(WARNING) << "Cannot subscribe: MQTT not initialized";
+void MqttBackendTransport::subscribe_c2v() {
+    if (!mosq_ || subscribed_) {
         return;
     }
 
-    std::string topic = c2v_topic(content_id);
-
-    {
-        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        if (subscribed_content_ids_.count(content_id) > 0) {
-            return;  // Already subscribed
-        }
-        subscribed_content_ids_.insert(content_id);
-    }
-
+    std::string topic = c2v_topic(config_.content_id);
     int rc = mosquitto_subscribe(mosq_, nullptr, topic.c_str(), config_.qos);
     if (rc != MOSQ_ERR_SUCCESS) {
         LOG(ERROR) << "MQTT subscribe failed for " << topic << ": " << mosquitto_strerror(rc);
-        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        subscribed_content_ids_.erase(content_id);
     } else {
+        subscribed_ = true;
         LOG(INFO) << "Subscribed to c2v topic: " << topic;
-    }
-}
-
-void MqttBackendTransport::unsubscribe_content(uint32_t content_id) {
-    if (!mosq_) {
-        return;
-    }
-
-    std::string topic = c2v_topic(content_id);
-
-    {
-        std::lock_guard<std::mutex> lock(subscriptions_mutex_);
-        subscribed_content_ids_.erase(content_id);
-    }
-
-    int rc = mosquitto_unsubscribe(mosq_, nullptr, topic.c_str());
-    if (rc != MOSQ_ERR_SUCCESS) {
-        LOG(WARNING) << "MQTT unsubscribe failed for " << topic << ": " << mosquitto_strerror(rc);
-    } else {
-        LOG(INFO) << "Unsubscribed from c2v topic: " << topic;
     }
 }
 
@@ -239,15 +207,14 @@ void MqttBackendTransport::on_connect(struct mosquitto*, void* obj, int rc) {
         if (self->on_connection_status_) {
             ConnectionStatus status;
             status.state = ConnectionState::Connected;
+            status.reason = DisconnectReason::None;
             status.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             self->on_connection_status_(status);
         }
 
-        // Subscribe to configured content IDs
-        for (uint32_t content_id : self->config_.content_ids) {
-            self->subscribe_content(content_id);
-        }
+        // Subscribe to bound content_id for c2v
+        self->subscribe_c2v();
     } else {
         self->connection_state_ = ConnectionState::Disconnected;
         LOG(WARNING) << "MQTT connection failed: " << mosquitto_connack_string(rc);
@@ -255,7 +222,14 @@ void MqttBackendTransport::on_connect(struct mosquitto*, void* obj, int rc) {
         if (self->on_connection_status_) {
             ConnectionStatus status;
             status.state = ConnectionState::Disconnected;
-            status.reason = mosquitto_connack_string(rc);
+            // Map MQTT connack to DisconnectReason
+            if (rc == MOSQ_ERR_AUTH) {
+                status.reason = DisconnectReason::AuthenticationFailed;
+            } else if (rc == MOSQ_ERR_CONN_REFUSED) {
+                status.reason = DisconnectReason::BrokerUnavailable;
+            } else {
+                status.reason = DisconnectReason::ProtocolError;
+            }
             status.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             self->on_connection_status_(status);
@@ -279,7 +253,7 @@ void MqttBackendTransport::on_disconnect(struct mosquitto*, void* obj, int rc) {
     if (self->on_connection_status_) {
         ConnectionStatus status;
         status.state = self->connection_state_;
-        status.reason = (rc != 0) ? mosquitto_strerror(rc) : "normal";
+        status.reason = (rc == 0) ? DisconnectReason::Requested : DisconnectReason::NetworkError;
         status.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         self->on_connection_status_(status);

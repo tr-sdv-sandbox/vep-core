@@ -104,7 +104,7 @@ void UnifiedExporterPipeline::do_flush() {
         stats_.batches_sent++;
     }
 
-    bool success = transport_->publish(config_.content_id, compressed);
+    bool success = transport_->publish(compressed);
     if (!success) {
         LOG(WARNING) << "UnifiedExporterPipeline: Failed to publish batch";
     }

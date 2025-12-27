@@ -43,9 +43,7 @@ struct UnifiedPipelineConfig {
     // Flush timeout - send batch even if not full
     std::chrono::milliseconds batch_timeout{1000};
 
-    // Content ID for transport routing
-    // Each application has a unique content_id assigned by the platform
-    uint32_t content_id = 1;
+    // Note: content_id is now configured in the transport, not in the pipeline
 };
 
 /// Statistics for the unified exporter pipeline

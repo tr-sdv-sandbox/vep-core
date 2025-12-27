@@ -36,12 +36,12 @@ struct MqttBackendTransportConfig {
     // Vehicle identification for topic construction
     std::string vehicle_id;
 
-    // Topic patterns (content_id appended for v2c, wildcard for c2v)
+    // Bound content_id for v2c publishing
+    uint32_t content_id = 1;
+
+    // Topic patterns
     std::string v2c_prefix = "v2c";   // v2c/{vehicle_id}/{content_id}
     std::string c2v_prefix = "c2v";   // c2v/{vehicle_id}/{content_id}
-
-    // Content IDs to subscribe to on startup (c2v)
-    std::vector<uint32_t> content_ids;
 };
 
 /// Bidirectional MQTT backend transport implementation
@@ -57,14 +57,10 @@ public:
     bool start() override;
     void stop() override;
 
-    // v2c: publish
-    bool publish(uint32_t content_id,
-                 const std::vector<uint8_t>& data,
-                 Persistence persistence = Persistence::None) override;
-
-    // c2v: subscribe/receive
-    void subscribe_content(uint32_t content_id) override;
-    void unsubscribe_content(uint32_t content_id) override;
+    // v2c: publish (uses bound content_id)
+    uint32_t content_id() const override { return config_.content_id; }
+    bool publish(const std::vector<uint8_t>& data,
+                 Persistence persistence = Persistence::BestEffort) override;
 
     // Status
     bool healthy() const override;
@@ -87,14 +83,14 @@ private:
     // Extract content_id from c2v topic
     bool parse_c2v_topic(const std::string& topic, uint32_t& content_id) const;
 
+    // Subscribe to bound content_id (called from on_connect)
+    void subscribe_c2v();
+
     MqttBackendTransportConfig config_;
     struct mosquitto* mosq_ = nullptr;
     std::atomic<bool> running_{false};
     std::atomic<ConnectionState> connection_state_{ConnectionState::Disconnected};
-
-    // Subscribed content IDs
-    std::mutex subscriptions_mutex_;
-    std::set<uint32_t> subscribed_content_ids_;
+    bool subscribed_ = false;  // Track if we've subscribed to c2v
 
     mutable std::mutex stats_mutex_;
     BackendTransportStats stats_;

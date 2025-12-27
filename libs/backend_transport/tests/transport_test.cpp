@@ -46,13 +46,15 @@ std::vector<uint8_t> generate_opaque_data(size_t size) {
 
 // Core test: Cloud sends opaque data, vehicle receives it via callback
 TEST_F(TransportTest, OpaqueDataFlowsCloudToVehicle) {
-    // Vehicle transport - subscribes to c2v
+    const uint32_t test_content_id = 42;
+
+    // Vehicle transport - bound to content_id 42
     MqttBackendTransportConfig vehicle_config;
     vehicle_config.broker_host = getMqttHost();
     vehicle_config.broker_port = getMqttPort();
     vehicle_config.client_id = "vehicle_" + vehicle_id_;
     vehicle_config.vehicle_id = vehicle_id_;
-    vehicle_config.content_ids = {42};  // Subscribe to content_id 42
+    vehicle_config.content_id = test_content_id;
 
     MqttBackendTransport vehicle(vehicle_config);
 
@@ -64,6 +66,7 @@ TEST_F(TransportTest, OpaqueDataFlowsCloudToVehicle) {
     cloud_config.vehicle_id = vehicle_id_;
     cloud_config.v2c_prefix = "c2v";  // Cloud publishes to c2v
     cloud_config.c2v_prefix = "v2c";  // Cloud subscribes to v2c
+    cloud_config.content_id = test_content_id;
 
     MqttBackendTransport cloud(cloud_config);
 
@@ -89,10 +92,9 @@ TEST_F(TransportTest, OpaqueDataFlowsCloudToVehicle) {
 
     // Generate opaque test data
     auto sent_data = generate_opaque_data(256);
-    uint32_t sent_content_id = 42;
 
-    // Cloud sends to vehicle
-    ASSERT_TRUE(cloud.publish(sent_content_id, sent_data));
+    // Cloud sends to vehicle (uses bound content_id)
+    ASSERT_TRUE(cloud.publish(sent_data));
 
     // Wait for vehicle to receive
     {
@@ -104,7 +106,7 @@ TEST_F(TransportTest, OpaqueDataFlowsCloudToVehicle) {
     }
 
     // Verify data integrity
-    EXPECT_EQ(received_content_id, sent_content_id);
+    EXPECT_EQ(received_content_id, test_content_id);
     EXPECT_EQ(received_data.size(), sent_data.size());
     EXPECT_EQ(received_data, sent_data) << "Received data does not match sent data";
 
@@ -114,12 +116,15 @@ TEST_F(TransportTest, OpaqueDataFlowsCloudToVehicle) {
 
 // Core test: Vehicle sends opaque data, cloud receives it via callback
 TEST_F(TransportTest, OpaqueDataFlowsVehicleToCloud) {
-    // Vehicle transport
+    const uint32_t test_content_id = 99;
+
+    // Vehicle transport - bound to content_id 99
     MqttBackendTransportConfig vehicle_config;
     vehicle_config.broker_host = getMqttHost();
     vehicle_config.broker_port = getMqttPort();
     vehicle_config.client_id = "vehicle_" + vehicle_id_;
     vehicle_config.vehicle_id = vehicle_id_;
+    vehicle_config.content_id = test_content_id;
 
     MqttBackendTransport vehicle(vehicle_config);
 
@@ -131,7 +136,7 @@ TEST_F(TransportTest, OpaqueDataFlowsVehicleToCloud) {
     cloud_config.vehicle_id = vehicle_id_;
     cloud_config.v2c_prefix = "c2v";
     cloud_config.c2v_prefix = "v2c";
-    cloud_config.content_ids = {99};  // Subscribe to content_id 99
+    cloud_config.content_id = test_content_id;
 
     MqttBackendTransport cloud(cloud_config);
 
@@ -157,10 +162,9 @@ TEST_F(TransportTest, OpaqueDataFlowsVehicleToCloud) {
 
     // Generate opaque test data
     auto sent_data = generate_opaque_data(1024);
-    uint32_t sent_content_id = 99;
 
-    // Vehicle sends to cloud
-    ASSERT_TRUE(vehicle.publish(sent_content_id, sent_data));
+    // Vehicle sends to cloud (uses bound content_id)
+    ASSERT_TRUE(vehicle.publish(sent_data));
 
     // Wait for cloud to receive
     {
@@ -172,7 +176,7 @@ TEST_F(TransportTest, OpaqueDataFlowsVehicleToCloud) {
     }
 
     // Verify data integrity
-    EXPECT_EQ(received_content_id, sent_content_id);
+    EXPECT_EQ(received_content_id, test_content_id);
     EXPECT_EQ(received_data.size(), sent_data.size());
     EXPECT_EQ(received_data, sent_data) << "Received data does not match sent data";
 
@@ -182,12 +186,14 @@ TEST_F(TransportTest, OpaqueDataFlowsVehicleToCloud) {
 
 // Test: Large opaque payload
 TEST_F(TransportTest, LargeOpaquePayload) {
+    const uint32_t test_content_id = 1;
+
     MqttBackendTransportConfig vehicle_config;
     vehicle_config.broker_host = getMqttHost();
     vehicle_config.broker_port = getMqttPort();
     vehicle_config.client_id = "vehicle_" + vehicle_id_;
     vehicle_config.vehicle_id = vehicle_id_;
-    vehicle_config.content_ids = {1};
+    vehicle_config.content_id = test_content_id;
 
     MqttBackendTransport vehicle(vehicle_config);
 
@@ -198,6 +204,7 @@ TEST_F(TransportTest, LargeOpaquePayload) {
     cloud_config.vehicle_id = vehicle_id_;
     cloud_config.v2c_prefix = "c2v";
     cloud_config.c2v_prefix = "v2c";
+    cloud_config.content_id = test_content_id;
 
     MqttBackendTransport cloud(cloud_config);
 
@@ -218,7 +225,7 @@ TEST_F(TransportTest, LargeOpaquePayload) {
     // 64KB opaque data
     auto sent_data = generate_opaque_data(64 * 1024);
 
-    ASSERT_TRUE(cloud.publish(1, sent_data));
+    ASSERT_TRUE(cloud.publish(sent_data));
 
     {
         std::unique_lock<std::mutex> lock(mtx);
@@ -233,49 +240,97 @@ TEST_F(TransportTest, LargeOpaquePayload) {
     cloud.stop();
 }
 
-// Test: Multiple content IDs
+// Test: Multiple content IDs require separate transport instances
 TEST_F(TransportTest, MultipleContentIds) {
-    MqttBackendTransportConfig vehicle_config;
-    vehicle_config.broker_host = getMqttHost();
-    vehicle_config.broker_port = getMqttPort();
-    vehicle_config.client_id = "vehicle_" + vehicle_id_;
-    vehicle_config.vehicle_id = vehicle_id_;
-    vehicle_config.content_ids = {1, 2, 3};  // Subscribe to multiple
+    // Create separate transports for each content_id
+    // Vehicle side - 3 transports for 3 content_ids
+    MqttBackendTransportConfig vehicle_config1;
+    vehicle_config1.broker_host = getMqttHost();
+    vehicle_config1.broker_port = getMqttPort();
+    vehicle_config1.client_id = "vehicle1_" + vehicle_id_;
+    vehicle_config1.vehicle_id = vehicle_id_;
+    vehicle_config1.content_id = 1;
 
-    MqttBackendTransport vehicle(vehicle_config);
+    MqttBackendTransportConfig vehicle_config2;
+    vehicle_config2.broker_host = getMqttHost();
+    vehicle_config2.broker_port = getMqttPort();
+    vehicle_config2.client_id = "vehicle2_" + vehicle_id_;
+    vehicle_config2.vehicle_id = vehicle_id_;
+    vehicle_config2.content_id = 2;
 
-    MqttBackendTransportConfig cloud_config;
-    cloud_config.broker_host = getMqttHost();
-    cloud_config.broker_port = getMqttPort();
-    cloud_config.client_id = "cloud_" + vehicle_id_;
-    cloud_config.vehicle_id = vehicle_id_;
-    cloud_config.v2c_prefix = "c2v";
-    cloud_config.c2v_prefix = "v2c";
+    MqttBackendTransportConfig vehicle_config3;
+    vehicle_config3.broker_host = getMqttHost();
+    vehicle_config3.broker_port = getMqttPort();
+    vehicle_config3.client_id = "vehicle3_" + vehicle_id_;
+    vehicle_config3.vehicle_id = vehicle_id_;
+    vehicle_config3.content_id = 3;
 
-    MqttBackendTransport cloud(cloud_config);
+    MqttBackendTransport vehicle1(vehicle_config1);
+    MqttBackendTransport vehicle2(vehicle_config2);
+    MqttBackendTransport vehicle3(vehicle_config3);
+
+    // Cloud side - 3 transports (swapped prefixes)
+    MqttBackendTransportConfig cloud_config1;
+    cloud_config1.broker_host = getMqttHost();
+    cloud_config1.broker_port = getMqttPort();
+    cloud_config1.client_id = "cloud1_" + vehicle_id_;
+    cloud_config1.vehicle_id = vehicle_id_;
+    cloud_config1.v2c_prefix = "c2v";
+    cloud_config1.c2v_prefix = "v2c";
+    cloud_config1.content_id = 1;
+
+    MqttBackendTransportConfig cloud_config2;
+    cloud_config2.broker_host = getMqttHost();
+    cloud_config2.broker_port = getMqttPort();
+    cloud_config2.client_id = "cloud2_" + vehicle_id_;
+    cloud_config2.vehicle_id = vehicle_id_;
+    cloud_config2.v2c_prefix = "c2v";
+    cloud_config2.c2v_prefix = "v2c";
+    cloud_config2.content_id = 2;
+
+    MqttBackendTransportConfig cloud_config3;
+    cloud_config3.broker_host = getMqttHost();
+    cloud_config3.broker_port = getMqttPort();
+    cloud_config3.client_id = "cloud3_" + vehicle_id_;
+    cloud_config3.vehicle_id = vehicle_id_;
+    cloud_config3.v2c_prefix = "c2v";
+    cloud_config3.c2v_prefix = "v2c";
+    cloud_config3.content_id = 3;
+
+    MqttBackendTransport cloud1(cloud_config1);
+    MqttBackendTransport cloud2(cloud_config2);
+    MqttBackendTransport cloud3(cloud_config3);
 
     std::mutex mtx;
     std::condition_variable cv;
     std::map<uint32_t, std::vector<uint8_t>> received;
 
-    vehicle.on_content([&](uint32_t content_id, const std::vector<uint8_t>& payload) {
+    auto on_recv = [&](uint32_t content_id, const std::vector<uint8_t>& payload) {
         std::lock_guard<std::mutex> lock(mtx);
         received[content_id] = payload;
         cv.notify_all();
-    });
+    };
 
-    ASSERT_TRUE(vehicle.start());
-    ASSERT_TRUE(cloud.start());
+    vehicle1.on_content(on_recv);
+    vehicle2.on_content(on_recv);
+    vehicle3.on_content(on_recv);
+
+    ASSERT_TRUE(vehicle1.start());
+    ASSERT_TRUE(vehicle2.start());
+    ASSERT_TRUE(vehicle3.start());
+    ASSERT_TRUE(cloud1.start());
+    ASSERT_TRUE(cloud2.start());
+    ASSERT_TRUE(cloud3.start());
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Send to different content IDs
+    // Send to different content IDs via different cloud transports
     std::vector<uint8_t> data1 = {0x01};
     std::vector<uint8_t> data2 = {0x02, 0x02};
     std::vector<uint8_t> data3 = {0x03, 0x03, 0x03};
 
-    ASSERT_TRUE(cloud.publish(1, data1));
-    ASSERT_TRUE(cloud.publish(2, data2));
-    ASSERT_TRUE(cloud.publish(3, data3));
+    ASSERT_TRUE(cloud1.publish(data1));
+    ASSERT_TRUE(cloud2.publish(data2));
+    ASSERT_TRUE(cloud3.publish(data3));
 
     // Wait for all to arrive
     {
@@ -289,8 +344,25 @@ TEST_F(TransportTest, MultipleContentIds) {
     EXPECT_EQ(received[2], data2);
     EXPECT_EQ(received[3], data3);
 
-    vehicle.stop();
-    cloud.stop();
+    vehicle1.stop();
+    vehicle2.stop();
+    vehicle3.stop();
+    cloud1.stop();
+    cloud2.stop();
+    cloud3.stop();
+}
+
+// Test: content_id() accessor returns configured value
+TEST_F(TransportTest, ContentIdAccessor) {
+    MqttBackendTransportConfig config;
+    config.broker_host = getMqttHost();
+    config.broker_port = getMqttPort();
+    config.client_id = "test_" + vehicle_id_;
+    config.vehicle_id = vehicle_id_;
+    config.content_id = 42;
+
+    MqttBackendTransport transport(config);
+    EXPECT_EQ(transport.content_id(), 42u);
 }
 
 }  // namespace
