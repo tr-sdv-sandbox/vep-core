@@ -149,20 +149,19 @@ add_subdirectory(libs/backend_transport)
 add_subdirectory(bridges/exporter_common)
 
 # ============================================================================
-# VEP Exporter (bridges/vep_exporter: DDS -> compressed MQTT)
+# VEP Exporter IFEX (bridges/vep_exporter_ifex: DDS -> IFEX gRPC)
+# Requires ifex-backend-transport-client from covesa-ifex-core
 # ============================================================================
 
-# Exporter executable (uses modular exporter_common libraries)
-add_executable(vep_exporter
-    bridges/vep_exporter/main.cpp
-)
+if(NOT TARGET ifex-backend-transport-client)
+    message(FATAL_ERROR "ifex-backend-transport-client target not found. "
+        "Ensure covesa-ifex-core is built before vep-core with BUILD_REFERENCE_SERVICES=ON")
+endif()
 
-target_link_libraries(vep_exporter PRIVATE
-    vep_exporter_common        # Encoding, batching, compression, pipeline, subscriber
-    vep_mqtt_backend_transport # MQTT backend transport
-    yaml-cpp::yaml-cpp
-    glog::glog
-)
+add_subdirectory(bridges/vep_exporter_ifex)
+message(STATUS "  - vep_exporter_ifex (DDS -> IFEX gRPC)")
+
+# Note: vep_exporter (direct MQTT) deprecated in favor of vep_exporter_ifex + grpc_backend_proxy
 
 # ============================================================================
 # Verify all required components with CTest
@@ -323,9 +322,7 @@ add_test(NAME integration_rt_dds_bridge_runs
 # Integration tests
 # ============================================================================
 
-add_test(NAME integration_exporter_runs
-    COMMAND vep_exporter --help
-)
+# Note: vep_exporter test removed (deprecated in favor of vep_exporter_ifex)
 
 add_test(NAME integration_vep_mqtt_logger_runs
     COMMAND vep_mqtt_logger --help
