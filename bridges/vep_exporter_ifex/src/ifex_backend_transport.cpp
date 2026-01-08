@@ -72,7 +72,8 @@ bool IfexBackendTransport::start() {
             ConnectionStatus vep_status;
             vep_status.state = new_state;
             vep_status.reason = from_ifex(status.reason);
-            vep_status.timestamp_ns = status.timestamp_ns;
+            // Convert from ifex milliseconds to vep nanoseconds
+            vep_status.timestamp_ns = status.timestamp_ms * 1000000;
             on_connection_status_(vep_status);
         }
     });
