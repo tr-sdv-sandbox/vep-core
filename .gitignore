@@ -3,3 +3,7 @@ build
 cmake-build*
 Testing
 .DS_Store
+
+# Build artifacts
+CMakeCache.txt
+CMakeFiles/
