@@ -319,6 +319,13 @@ add_test(NAME integration_rt_dds_bridge_runs
 )
 
 # ============================================================================
+# CAN Actuator Bridge (DDS -> CAN)
+# ============================================================================
+
+add_subdirectory(bridges/vep_can_actuator)
+message(STATUS "  - vep_can_actuator (DDS actuators -> CAN)")
+
+# ============================================================================
 # Integration tests
 # ============================================================================
 
@@ -368,6 +375,7 @@ if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
 message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport bridge)")
+message(STATUS "    - vep_can_actuator      (DDS actuators -> CAN)")
 message(STATUS "  Tools:")
 message(STATUS "    - vep_mqtt_logger       (MQTT -> decompress -> TransferBatch -> display)")
 message(STATUS "    - vep_host_metrics      (Linux host metrics -> OTLP gRPC)")

@@ -1,0 +1,73 @@
+{
+  "Vehicle": {
+    "type": "branch",
+    "description": "Root of the VSS tree",
+    "children": {
+      "Cabin": {
+        "type": "branch",
+        "description": "Cabin domain",
+        "children": {
+          "HVAC": {
+            "type": "branch",
+            "description": "Climate control",
+            "children": {
+              "IsAirConditioningActive": {
+                "datatype": "int8",
+                "description": "Is Air conditioning active.",
+                "type": "actuator",
+                "vss2dbc": {
+                  "message": {
+                    "name": "HVAC_Control",
+                    "canid": "0x1AFFCB02",
+                    "length_in_bytes": 8,
+                    "cycle_time_ms": 1000
+                  },
+                  "signal": {
+                    "name": "AC_Active",
+                    "bitposition": {
+                      "start": 0,
+                      "length": 8
+                    },
+                    "transform": {
+                      "offset": 10,
+                      "factor": 5
+                    },
+                    "max": 100,
+                    "min": -100
+                  }
+                }
+              },
+              "AirDistribution": {
+                "datatype": "string",
+                "description": "Direction of airstream",
+                "type": "actuator",
+                "vss2dbc": {
+                  "message": {
+                    "name": "AirDistributionControl",
+                    "canid": "0x1AFFCB02",
+                    "length_in_bytes": 8,
+                    "cycle_time_ms": 1000
+                  },
+                  "signal": {
+                    "name": "Air_Distribution_Mode",
+                    "bitposition": {
+                      "start": 30,
+                      "length": 2
+                    },
+                    "transform": {
+                      "mapping": {
+                        "UP": 0,
+                        "MIDDLE": 1,
+                        "DOWN": 2
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
