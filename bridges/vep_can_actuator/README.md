@@ -352,6 +352,132 @@ Failed to create CAN socket: Operation not permitted
 ```
 Solution: Run with appropriate permissions or add user to `can` group.
 
+## Test Tools
+
+Two tools are provided for testing the actuator pipeline:
+
+### actuator_test_publisher
+
+Publishes actuator commands **directly to DDS** topic `rt/vss/actuators/target`. This bypasses KUKSA and sends directly to `vep_can_actuator`.
+
+**Data Flow:**
+```
+actuator_test_publisher → DDS (rt/vss/actuators/target) → vep_can_actuator → CAN
+```
+
+**Usage:**
+```bash
+# Local build
+./build/vep-core/bridges/vep_can_actuator/actuator_test_publisher \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value 50
+
+# Using container (ARM64)
+sudo podman run --rm -it \
+    --network host \
+    gitlab-registry.collaborationlayer-traton.com/chipps/chipps-project-groups/traton/chipps-artifacts/tvep-runtime \
+    actuator_test_publisher \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value 50
+
+# With macvlan network (when running with pipeline)
+sudo podman run --rm -it \
+    --network tvw-pipeline \
+    gitlab-registry.collaborationlayer-traton.com/chipps/chipps-project-groups/traton/chipps-artifacts/tvep-runtime \
+    actuator_test_publisher \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value 50
+```
+
+**Options:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--path` | VSS actuator path (required) | - |
+| `--value` | Value to set - numeric or string (required) | - |
+| `--topic` | DDS topic to publish to | `rt/vss/actuators/target` |
+| `--count` | Number of messages to publish (0 = infinite) | 1 |
+| `--interval_ms` | Interval between publishes in ms | 1000 |
+
+### kuksa_actuator_sender
+
+Sends actuator commands **through KUKSA databroker**, which routes to `kuksa_dds_bridge`, which then publishes to DDS.
+
+**Data Flow:**
+```
+kuksa_actuator_sender → KUKSA → kuksa_dds_bridge → DDS (rt/vss/actuators/target) → vep_can_actuator → CAN
+```
+
+**Prerequisites:**
+- KUKSA databroker must be running with a VSS schema that defines the actuator path
+- `kuksa_dds_bridge` must be running and registered as the actuator provider
+
+**Usage:**
+```bash
+# Local build
+./build/vep-core/bridges/vep_can_actuator/kuksa_actuator_sender \
+    --kuksa "localhost:55555" \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value true
+
+# Using container (ARM64)
+sudo podman run --rm -it \
+    --network host \
+    gitlab-registry.collaborationlayer-traton.com/chipps/chipps-project-groups/traton/chipps-artifacts/tvep-runtime \
+    kuksa_actuator_sender \
+    --kuksa "localhost:55555" \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value true
+
+# With custom KUKSA host
+sudo podman run --rm -it \
+    --network host \
+    gitlab-registry.collaborationlayer-traton.com/chipps/chipps-project-groups/traton/chipps-artifacts/tvep-runtime \
+    kuksa_actuator_sender \
+    --kuksa "10.0.100.20:55555" \
+    --path "Vehicle.Cabin.HVAC.IsAirConditioningActive" \
+    --value 50
+```
+
+**Options:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--kuksa` | KUKSA databroker address (host:port) | `localhost:55555` |
+| `--path` | VSS actuator path (required) | - |
+| `--value` | Value to set (required) | - |
+
+### Comparison
+
+| Feature | `actuator_test_publisher` | `kuksa_actuator_sender` |
+|---------|---------------------------|-------------------------|
+| **Route** | Direct to DDS | Through KUKSA |
+| **Dependencies** | Only DDS | KUKSA + kuksa_dds_bridge |
+| **Use case** | Testing DDS→CAN path | Testing full KUKSA→CAN path |
+| **Type validation** | None (accepts any value) | Uses KUKSA schema types |
+| **Continuous mode** | Yes (`--count`, `--interval_ms`) | No (single command) |
+
+### Debugging Tips
+
+**Check if actuator command reaches DDS:**
+```bash
+# Monitor kuksa_dds_bridge logs for actuator forwarding
+podman logs <kuksa-bridge-container> 2>&1 | grep -i actuator
+```
+
+Look for:
+- `Registered X actuators with Kuksa` - Actuators registered
+- `Actuator target request: <path>` - Request received from KUKSA
+- `Sent actuator target to DDS: <path>` - Forwarded to DDS
+
+**Check if vep_can_actuator receives the message:**
+```bash
+# Monitor vep_can_actuator logs
+podman logs <can-actuator-container> 2>&1
+```
+
+Look for:
+- `Received actuator command: <path>` - DDS message received
+- `Writing CAN frame: ID=<id>` - CAN frame sent
+
 ## Related Components
 
 | Component | Description |
