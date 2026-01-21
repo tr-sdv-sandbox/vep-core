@@ -12,13 +12,15 @@
 ///
 /// Usage:
 ///   rt_dds_bridge --transport=logging
-///   rt_dds_bridge --transport=udp --udp-host=192.168.1.100 --udp-port=9000
+///   rt_dds_bridge --transport=loopback --loopback-delay-ms=100
 ///
 /// The transport type determines how we communicate with the RT controller:
 /// - logging: Just logs commands (for testing)
-/// - udp: Send/receive via UDP (future)
+/// - loopback: Echoes targets back as actuals (for testing without real RT)
 /// - avtp: IEEE 1722 AVTP (future)
 /// - shm: Shared memory (future)
+///
+/// For UDP forwarding to QNX, use the dedicated rt_dds_message_forwarder component.
 
 #include "rt_dds_bridge.hpp"
 
@@ -31,13 +33,10 @@
 #include <thread>
 
 // Command line flags
-DEFINE_string(transport, "logging", "RT transport type: logging, loopback, udp, avtp, shm");
+DEFINE_string(transport, "logging", "RT transport type: logging, loopback, avtp, shm");
 DEFINE_string(target_topic, "rt/vss/actuators/target", "DDS topic for actuator targets");
 DEFINE_string(actual_topic, "rt/vss/actuators/actual", "DDS topic for actuator actuals");
 DEFINE_int32(loopback_delay_ms, 100, "Delay before loopback echoes actual (ms)");
-DEFINE_string(udp_host, "127.0.0.1", "UDP target host (for udp transport)");
-DEFINE_int32(udp_port, 9000, "UDP target port (for udp transport)");
-DEFINE_int32(udp_listen_port, 9001, "UDP listen port for actuals (for udp transport)");
 DEFINE_int32(stats_interval, 30, "Statistics logging interval in seconds (0=disabled)");
 
 // Global shutdown flag
@@ -67,10 +66,6 @@ int main(int argc, char* argv[]) {
     if (FLAGS_transport == "loopback") {
         LOG(INFO) << "  Loopback delay: " << FLAGS_loopback_delay_ms << "ms";
     }
-    if (FLAGS_transport == "udp") {
-        LOG(INFO) << "  UDP host: " << FLAGS_udp_host << ":" << FLAGS_udp_port;
-        LOG(INFO) << "  UDP listen: " << FLAGS_udp_listen_port;
-    }
 
     // Configure bridge
     rt_bridge::RtBridgeConfig config;
@@ -78,9 +73,6 @@ int main(int argc, char* argv[]) {
     config.dds_actuator_actual_topic = FLAGS_actual_topic;
     config.rt_transport_type = FLAGS_transport;
     config.loopback_delay_ms = FLAGS_loopback_delay_ms;
-    config.udp_target_host = FLAGS_udp_host;
-    config.udp_target_port = static_cast<uint16_t>(FLAGS_udp_port);
-    config.udp_listen_port = static_cast<uint16_t>(FLAGS_udp_listen_port);
 
     // Create bridge
     rt_bridge::RtDdsBridge bridge(config);

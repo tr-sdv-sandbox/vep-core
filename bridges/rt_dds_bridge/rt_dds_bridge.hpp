@@ -41,15 +41,10 @@ struct RtBridgeConfig {
     std::string dds_actuator_actual_topic = "rt/vss/actuators/actual";
 
     // RT transport type (for factory)
-    std::string rt_transport_type = "logging";  // "logging", "loopback", "udp", "avtp", etc.
+    std::string rt_transport_type = "logging";  // "logging", "loopback", "avtp", etc.
 
     // Loopback transport config (if rt_transport_type == "loopback")
     int loopback_delay_ms = 100;  // Delay before echoing actual
-
-    // UDP transport config (if rt_transport_type == "udp")
-    std::string udp_target_host = "127.0.0.1";
-    uint16_t udp_target_port = 9000;
-    uint16_t udp_listen_port = 9001;
 };
 
 /// RT-DDS Bridge
