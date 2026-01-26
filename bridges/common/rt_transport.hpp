@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <thread>
 #include <variant>
 
 namespace bridge {
@@ -109,6 +110,52 @@ private:
     int delay_ms_;
     ActualValueCallback actual_callback_;
     std::atomic<bool> running_{false};
+};
+
+/// UDP transport that sends actuator targets to a UDP endpoint
+/// The message format is: PATH|VALUE|TIMESTAMP_NS
+/// Example: "Vehicle.Cabin.HVAC.IsAirConditioningActive|50|1706284800000000000"
+///
+/// Supports both unicast and multicast addresses:
+/// - Unicast: 192.168.0.100 (sends to specific host)
+/// - Multicast: 239.1.1.1 (sends to multicast group, auto-detected)
+///
+/// For multicast, optionally specify the outgoing interface with multicast_interface.
+class UdpRtTransport : public RtTransport {
+public:
+    /// @param target_host UDP target host (unicast or multicast address)
+    /// @param target_port UDP target port
+    /// @param listen_port UDP port to listen for actuals (0 = disable listening)
+    /// @param multicast_interface Interface for multicast (e.g., "eth0", empty = default)
+    UdpRtTransport(const std::string& target_host, uint16_t target_port,
+                   uint16_t listen_port = 0, const std::string& multicast_interface = "");
+    ~UdpRtTransport();
+
+    bool initialize() override;
+    void shutdown() override;
+
+    bool send_actuator_target(
+        const std::string& path,
+        const ActuatorValue& target_value
+    ) override;
+
+    void on_actual_value(ActualValueCallback callback) override;
+
+private:
+    std::string target_host_;
+    uint16_t target_port_;
+    uint16_t listen_port_;
+    std::string multicast_interface_;
+    int send_socket_ = -1;
+    int recv_socket_ = -1;
+    ActualValueCallback actual_callback_;
+    std::atomic<bool> running_{false};
+    std::thread recv_thread_;
+    bool is_multicast_ = false;
+
+    bool is_multicast_address(const std::string& addr);
+    bool setup_multicast_socket();
+    void recv_loop();
 };
 
 }  // namespace bridge

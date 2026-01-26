@@ -35,9 +35,10 @@ DEFINE_string(transport, "logging", "RT transport type: logging, loopback, udp, 
 DEFINE_string(target_topic, "rt/vss/actuators/target", "DDS topic for actuator targets");
 DEFINE_string(actual_topic, "rt/vss/actuators/actual", "DDS topic for actuator actuals");
 DEFINE_int32(loopback_delay_ms, 100, "Delay before loopback echoes actual (ms)");
-DEFINE_string(udp_host, "127.0.0.1", "UDP target host (for udp transport)");
+DEFINE_string(udp_host, "127.0.0.1", "UDP target host - unicast or multicast (for udp transport)");
 DEFINE_int32(udp_port, 9000, "UDP target port (for udp transport)");
 DEFINE_int32(udp_listen_port, 9001, "UDP listen port for actuals (for udp transport)");
+DEFINE_string(udp_interface, "", "Network interface for multicast (e.g., eth0, empty=default)");
 DEFINE_int32(stats_interval, 30, "Statistics logging interval in seconds (0=disabled)");
 
 // Global shutdown flag
@@ -70,6 +71,9 @@ int main(int argc, char* argv[]) {
     if (FLAGS_transport == "udp") {
         LOG(INFO) << "  UDP host: " << FLAGS_udp_host << ":" << FLAGS_udp_port;
         LOG(INFO) << "  UDP listen: " << FLAGS_udp_listen_port;
+        if (!FLAGS_udp_interface.empty()) {
+            LOG(INFO) << "  UDP interface: " << FLAGS_udp_interface;
+        }
     }
 
     // Configure bridge
@@ -81,6 +85,7 @@ int main(int argc, char* argv[]) {
     config.udp_target_host = FLAGS_udp_host;
     config.udp_target_port = static_cast<uint16_t>(FLAGS_udp_port);
     config.udp_listen_port = static_cast<uint16_t>(FLAGS_udp_listen_port);
+    config.udp_multicast_interface = FLAGS_udp_interface;
 
     // Create bridge
     rt_bridge::RtDdsBridge bridge(config);
