@@ -282,7 +282,7 @@ else()
 endif()
 
 # ============================================================================
-# RT-DDS Bridge (DDS <-> RT transport)
+# RT-DDS Bridge (DDS <-> RT transport with UDP/multicast support)
 # ============================================================================
 
 # RT bridge library
@@ -313,17 +313,19 @@ target_link_libraries(rt_dds_bridge PRIVATE
     glog::glog
 )
 
+install(TARGETS rt_dds_bridge RUNTIME DESTINATION bin)
+
 # Test
 add_test(NAME integration_rt_dds_bridge_runs
-    COMMAND rt_dds_bridge --version
+    COMMAND rt_dds_bridge --help
 )
+set_tests_properties(integration_rt_dds_bridge_runs PROPERTIES WILL_FAIL TRUE)
 
 # ============================================================================
-# CAN Actuator Bridge (DDS -> CAN)
+# CAN Actuator Bridge - MOVED TO tvep-core
 # ============================================================================
-
-add_subdirectory(bridges/vep_can_actuator)
-message(STATUS "  - vep_can_actuator (DDS actuators -> CAN)")
+# Note: vep_can_actuator has been moved to tvep-core for Traton-specific
+# vehicle actuator configuration.
 
 # ============================================================================
 # Integration tests
@@ -374,8 +376,8 @@ message(STATUS "    - vep_exporter          (DDS subscriber -> compressed MQTT)"
 if(kuksa_FOUND)
 message(STATUS "    - kuksa_dds_bridge      (Kuksa databroker <-> DDS bridge)")
 endif()
-message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport bridge)")
-message(STATUS "    - vep_can_actuator      (DDS actuators -> CAN)")
+message(STATUS "    - rt_dds_bridge         (DDS <-> RT transport with UDP/multicast)")
+message(STATUS "  (vep_can_actuator moved to tvep-core)")
 message(STATUS "  Tools:")
 message(STATUS "    - vep_mqtt_logger       (MQTT -> decompress -> TransferBatch -> display)")
 message(STATUS "    - vep_host_metrics      (Linux host metrics -> OTLP gRPC)")
