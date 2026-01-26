@@ -291,8 +291,24 @@ bool UdpRtTransport::send_actuator_target(
     auto timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         now.time_since_epoch()).count();
 
-    // Format message: PATH|VALUE|TIMESTAMP_NS
-    std::string message = path + "|" + value_to_string(target_value) + "|" + std::to_string(timestamp_ns);
+    // Format message as JSON
+    std::string value_json = std::visit([](auto&& v) -> std::string {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, bool>) {
+            return v ? "true" : "false";
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            return "\"" + v + "\"";
+        } else if constexpr (std::is_integral_v<T>) {
+            return std::to_string(static_cast<int64_t>(v));
+        } else if constexpr (std::is_floating_point_v<T>) {
+            return std::to_string(v);
+        } else {
+            return "null";
+        }
+    }, target_value);
+
+    std::string message = "{\"path\":\"" + path + "\",\"value\":" + value_json +
+                          ",\"timestamp_ns\":" + std::to_string(timestamp_ns) + "}";
 
     // Setup destination address
     struct sockaddr_in dest_addr;
@@ -346,17 +362,44 @@ void UdpRtTransport::recv_loop() {
         buffer[received] = '\0';
         std::string message(buffer, received);
 
-        // Parse message: PATH|VALUE|TIMESTAMP_NS
-        size_t first_pipe = message.find('|');
-        size_t second_pipe = message.find('|', first_pipe + 1);
+        // Parse JSON message: {"path":"...", "value":..., "timestamp_ns":...}
+        // Simple JSON parsing without external library
+        auto extract_json_string = [](const std::string& json, const std::string& key) -> std::string {
+            std::string search = "\"" + key + "\":\"";
+            size_t start = json.find(search);
+            if (start == std::string::npos) return "";
+            start += search.length();
+            size_t end = json.find("\"", start);
+            if (end == std::string::npos) return "";
+            return json.substr(start, end - start);
+        };
 
-        if (first_pipe == std::string::npos || second_pipe == std::string::npos) {
-            LOG(WARNING) << "[RT UDP] Invalid message format: " << message;
+        auto extract_json_value = [](const std::string& json, const std::string& key) -> std::string {
+            std::string search = "\"" + key + "\":";
+            size_t start = json.find(search);
+            if (start == std::string::npos) return "";
+            start += search.length();
+            // Skip whitespace
+            while (start < json.length() && (json[start] == ' ' || json[start] == '\t')) start++;
+            // Find end (comma, closing brace, or end of string)
+            size_t end = start;
+            bool in_string = (json[start] == '"');
+            if (in_string) {
+                start++;  // Skip opening quote
+                end = json.find("\"", start);
+                return json.substr(start, end - start);
+            }
+            while (end < json.length() && json[end] != ',' && json[end] != '}') end++;
+            return json.substr(start, end - start);
+        };
+
+        std::string path = extract_json_string(message, "path");
+        std::string value_str = extract_json_value(message, "value");
+
+        if (path.empty()) {
+            LOG(WARNING) << "[RT UDP] Invalid JSON message (no path): " << message;
             continue;
         }
-
-        std::string path = message.substr(0, first_pipe);
-        std::string value_str = message.substr(first_pipe + 1, second_pipe - first_pipe - 1);
 
         LOG(INFO) << "[RT UDP] Received actual: path=" << path << " value=" << value_str;
 
