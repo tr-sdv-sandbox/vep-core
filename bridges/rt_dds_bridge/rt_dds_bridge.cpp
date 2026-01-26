@@ -324,10 +324,15 @@ std::shared_ptr<bridge::RtTransport> create_rt_transport(
     else if (type == "loopback") {
         return std::make_shared<bridge::LoopbackRtTransport>(config.loopback_delay_ms);
     }
+    else if (type == "udp") {
+        return std::make_shared<bridge::UdpRtTransport>(
+            config.udp_target_host,
+            config.udp_target_port,
+            config.udp_listen_port,
+            config.udp_multicast_interface
+        );
+    }
     // Future: add more transport types
-    // else if (type == "udp") {
-    //     return std::make_shared<UdpRtTransport>(config.udp_target_host, config.udp_target_port, config.udp_listen_port);
-    // }
     // else if (type == "avtp") {
     //     return std::make_shared<AvtpRtTransport>(...);
     // }

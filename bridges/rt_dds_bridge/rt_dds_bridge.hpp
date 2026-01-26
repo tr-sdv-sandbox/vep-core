@@ -50,6 +50,7 @@ struct RtBridgeConfig {
     std::string udp_target_host = "127.0.0.1";
     uint16_t udp_target_port = 9000;
     uint16_t udp_listen_port = 9001;
+    std::string udp_multicast_interface = "";  // e.g., "eth0" for multicast
 };
 
 /// RT-DDS Bridge
