@@ -325,12 +325,11 @@ std::shared_ptr<bridge::RtTransport> create_rt_transport(
         return std::make_shared<bridge::LoopbackRtTransport>(config.loopback_delay_ms);
     }
     // Future: add more transport types
-    // else if (type == "udp") {
-    //     return std::make_shared<UdpRtTransport>(config.udp_target_host, config.udp_target_port, config.udp_listen_port);
-    // }
     // else if (type == "avtp") {
     //     return std::make_shared<AvtpRtTransport>(...);
     // }
+    //
+    // For UDP forwarding to QNX, use the dedicated rt_dds_message_forwarder component.
 
     LOG(ERROR) << "Unknown RT transport type: " << type;
     return nullptr;
